@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+
+@theme {
+  --color-background: #F8F9FB;
+  --color-foreground: #1F2937;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #111827;
+  --color-primary: #4F46E5;
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: #F3F4F6;
+  --color-secondary-foreground: #374151;
+  --color-muted: #F9FAFB;
+  --color-muted-foreground: #6B7280;
+  --color-border: #E5E7EB;
+  --color-success: #DEF7EC;
+  --color-success-foreground: #03543F;
+  --color-warning: #FDF6B2;
+  --color-warning-foreground: #723B10;
+  --color-error: #FDE8E8;
+  --color-error-foreground: #9B1C1C;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui;
+  --font-display: 'Outfit', ui-sans-serif, system-ui;
+}
+
+@layer base {
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    @apply bg-background text-foreground antialiased overflow-hidden font-sans;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display tracking-tight font-semibold text-slate-900;
+  }
+}
+
+/* Custom Scrollbar - Prominent for Tables */
+::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border: 3px solid #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* Glassmorphism utility */
+.glass {
+  @apply bg-white/70 backdrop-blur-md border border-white/30;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  @apply transition-colors duration-200;
+}

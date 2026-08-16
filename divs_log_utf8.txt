@@ -1,0 +1,94 @@
+﻿Line 71: 1 opens, 1 closes. Balance: 0 | if (!quote) return <div classN
+Line 74: 1 opens, 0 closes. Balance: 1 | <div className="min-h-screen b
+Line 86: 1 opens, 0 closes. Balance: 2 | <div className="bg-white/80 ba
+Line 87: 1 opens, 0 closes. Balance: 3 | <div className="flex items-cen
+Line 88: 1 opens, 0 closes. Balance: 4 | <div>
+Line 89: 1 opens, 0 closes. Balance: 5 | <div className="flex items-cen
+Line 94: 0 opens, 1 closes. Balance: 4 | </div>
+Line 96: 0 opens, 1 closes. Balance: 3 | </div>
+Line 98: 1 opens, 1 closes. Balance: 3 | <div className="h-10 w-px bg-s
+Line 100: 1 opens, 0 closes. Balance: 4 | <div className="flex items-cen
+Line 103: 1 opens, 0 closes. Balance: 5 | <div className="relative" ref=
+Line 111: 1 opens, 0 closes. Balance: 6 | <div className="absolute top-f
+Line 112: 1 opens, 1 closes. Balance: 6 | <div className="px-6 py-2 mb-2
+Line 128: 1 opens, 1 closes. Balance: 6 | <div className="h-px bg-slate-
+Line 130: 0 opens, 1 closes. Balance: 5 | </div>
+Line 132: 0 opens, 1 closes. Balance: 4 | </div>
+Line 133: 0 opens, 1 closes. Balance: 3 | </div>
+Line 136: 1 opens, 0 closes. Balance: 4 | <div className="flex items-cen
+Line 137: 1 opens, 0 closes. Balance: 5 | <div className="flex items-cen
+Line 147: 0 opens, 1 closes. Balance: 4 | </div>
+Line 149: 1 opens, 1 closes. Balance: 4 | <div className="h-10 w-px bg-s
+Line 151: 1 opens, 0 closes. Balance: 5 | <div className="flex items-cen
+Line 152: 1 opens, 0 closes. Balance: 6 | <div className="flex bg-white 
+Line 154: 1 opens, 1 closes. Balance: 6 | <div className="px-4 flex item
+Line 156: 0 opens, 1 closes. Balance: 5 | </div>
+Line 157: 0 opens, 1 closes. Balance: 4 | </div>
+Line 158: 0 opens, 1 closes. Balance: 3 | </div>
+Line 159: 0 opens, 1 closes. Balance: 2 | </div>
+Line 163: 1 opens, 0 closes. Balance: 3 | <div className="no-print mx-8 
+Line 164: 1 opens, 0 closes. Balance: 4 | <div className="flex items-cen
+Line 165: 1 opens, 1 closes. Balance: 4 | <div className="w-10 h-10 roun
+Line 166: 1 opens, 0 closes. Balance: 5 | <div>
+Line 169: 0 opens, 1 closes. Balance: 4 | </div>
+Line 170: 0 opens, 1 closes. Balance: 3 | </div>
+Line 171: 1 opens, 0 closes. Balance: 4 | <div className="flex items-cen
+Line 174: 0 opens, 1 closes. Balance: 3 | </div>
+Line 175: 0 opens, 1 closes. Balance: 2 | </div>
+Line 179: 1 opens, 0 closes. Balance: 3 | <div className="flex-1 p-8 fle
+Line 180: 1 opens, 0 closes. Balance: 4 | <div className="print-area bg-
+Line 182: 1 opens, 0 closes. Balance: 5 | <div className="flex justify-b
+Line 183: 1 opens, 0 closes. Balance: 6 | <div>
+Line 186: 1 opens, 1 closes. Balance: 6 | <div className="w-24 h-2 bg-sl
+Line 187: 0 opens, 1 closes. Balance: 5 | </div>
+Line 188: 1 opens, 0 closes. Balance: 6 | <div className="flex flex-col 
+Line 189: 1 opens, 0 closes. Balance: 7 | <div className="bg-slate-900 p
+Line 193: 0 opens, 1 closes. Balance: 6 | </div>
+Line 194: 1 opens, 0 closes. Balance: 7 | <div className="text-slate-400
+Line 198: 0 opens, 1 closes. Balance: 6 | </div>
+Line 199: 0 opens, 1 closes. Balance: 5 | </div>
+Line 200: 0 opens, 1 closes. Balance: 4 | </div>
+Line 203: 1 opens, 0 closes. Balance: 5 | <div className="grid grid-cols
+Line 204: 1 opens, 0 closes. Balance: 6 | <div className="space-y-6">
+Line 205: 1 opens, 0 closes. Balance: 7 | <div>
+Line 213: 0 opens, 1 closes. Balance: 6 | </div>
+Line 214: 0 opens, 1 closes. Balance: 5 | </div>
+Line 216: 1 opens, 0 closes. Balance: 6 | <div className="bg-slate-50 p-
+Line 217: 1 opens, 1 closes. Balance: 6 | <div className="absolute top-0
+Line 219: 1 opens, 0 closes. Balance: 7 | <div className="relative space
+Line 220: 1 opens, 0 closes. Balance: 8 | <div className="flex justify-b
+Line 223: 0 opens, 1 closes. Balance: 7 | </div>
+Line 224: 1 opens, 0 closes. Balance: 8 | <div className="flex justify-b
+Line 227: 0 opens, 1 closes. Balance: 7 | </div>
+Line 228: 1 opens, 0 closes. Balance: 8 | <div className="flex justify-b
+Line 231: 0 opens, 1 closes. Balance: 7 | </div>
+Line 232: 0 opens, 1 closes. Balance: 6 | </div>
+Line 233: 0 opens, 1 closes. Balance: 5 | </div>
+Line 234: 0 opens, 1 closes. Balance: 4 | </div>
+Line 238: 1 opens, 0 closes. Balance: 5 | <div className="mb-12">
+Line 240: 1 opens, 1 closes. Balance: 5 | <div className="h-1 w-12 bg-in
+Line 241: 0 opens, 1 closes. Balance: 4 | </div>
+Line 283: 1 opens, 0 closes. Balance: 5 | <div className="flex justify-e
+Line 284: 1 opens, 0 closes. Balance: 6 | <div className="bg-slate-900 p
+Line 285: 1 opens, 0 closes. Balance: 7 | <div className="flex justify-b
+Line 288: 0 opens, 1 closes. Balance: 6 | </div>
+Line 289: 1 opens, 0 closes. Balance: 7 | <div className="text-right mb-
+Line 293: 0 opens, 1 closes. Balance: 6 | </div>
+Line 295: 1 opens, 0 closes. Balance: 7 | <div className="border-t borde
+Line 298: 0 opens, 1 closes. Balance: 6 | </div>
+Line 300: 0 opens, 1 closes. Balance: 5 | </div>
+Line 301: 0 opens, 1 closes. Balance: 4 | </div>
+Line 304: 1 opens, 0 closes. Balance: 5 | <div className="bg-slate-50/50
+Line 306: 1 opens, 0 closes. Balance: 6 | <div className="grid grid-cols
+Line 307: 1 opens, 1 closes. Balance: 6 | <div className="flex justify-b
+Line 308: 1 opens, 1 closes. Balance: 6 | <div className="flex justify-b
+Line 309: 1 opens, 1 closes. Balance: 6 | <div className="flex justify-b
+Line 310: 1 opens, 1 closes. Balance: 6 | <div className="flex justify-b
+Line 311: 1 opens, 1 closes. Balance: 6 | <div className="flex justify-b
+Line 312: 1 opens, 1 closes. Balance: 6 | <div className="flex justify-b
+Line 313: 0 opens, 1 closes. Balance: 5 | </div>
+Line 314: 0 opens, 1 closes. Balance: 4 | </div>
+Line 315: 0 opens, 1 closes. Balance: 3 | </div>
+Line 316: 0 opens, 1 closes. Balance: 2 | </div>
+Line 317: 0 opens, 1 closes. Balance: 1 | </div>
+Final balance: 1

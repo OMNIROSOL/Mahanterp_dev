@@ -1,0 +1,7 @@
+{
+  "name": "CloudManager Accounting_ANU2602",
+  "description": "A comprehensive, AI-powered accounting software inspired by Manager.io, featuring double-entry bookkeeping, financial reporting, and intelligent transaction analysis.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

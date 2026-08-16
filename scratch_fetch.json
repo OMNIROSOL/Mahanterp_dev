@@ -1,0 +1,161 @@
+{
+  "shp1": [],
+  "relatedGrns": [
+    {
+      "id": "537a1fc9-729c-4737-806e-ce5f25d1aa5f",
+      "reference": "GRN-0011",
+      "receivedDate": "14.08.2026",
+      "supplierId": "ffb783ec-9775-40b2-8a5c-e2a4c1ba6c3d",
+      "purchaseOrderId": null,
+      "description": "Received items for SHP-0001",
+      "status": "Draft",
+      "inventoryLocation": "",
+      "createdAt": "2026-08-14T08:46:30.018Z",
+      "supplier": "\tACTIVE GENERAL MOTORS LIMITED",
+      "purchaseOrder": "—",
+      "items": [
+        {
+          "id": "1e6b1f9d-ede9-41cf-863c-cfe1a8f1b2c2",
+          "goodsReceivedNoteId": "537a1fc9-729c-4737-806e-ce5f25d1aa5f",
+          "itemId": "50a52c0d-808e-4143-8067-c97e757e3984",
+          "description": "12V 68032MF Battery",
+          "qty": "1",
+          "item": {
+            "id": "50a52c0d-808e-4143-8067-c97e757e3984",
+            "itemCode": "MI0848",
+            "itemName": "DIN180MF 12V BATTERY",
+            "description": "12V 68032MF Battery",
+            "unitName": "Each",
+            "valuationMethod": "WeightedAverage",
+            "isInactive": false,
+            "createdAt": "2026-06-12T21:21:05.867Z",
+            "purchasePrice": "20.43",
+            "sellingPrice": "20.43",
+            "marginPercentage": "0",
+            "qtyOnHand": "4061",
+            "imageUrl": null,
+            "category": "Batteries"
+          }
+        }
+      ],
+      "isPurchaseInvoice": false
+    },
+    {
+      "id": "6c96abe7-6ff7-4b48-af67-387d377caf61",
+      "reference": "GRN-0005",
+      "receivedDate": "13.08.2026",
+      "supplierId": "ffb783ec-9775-40b2-8a5c-e2a4c1ba6c3d",
+      "purchaseOrderId": null,
+      "description": "Received items for SHP-0001",
+      "status": "Approved",
+      "inventoryLocation": "Default Inventory Location",
+      "createdAt": "2026-08-13T21:28:19.541Z",
+      "supplier": "\tACTIVE GENERAL MOTORS LIMITED",
+      "purchaseOrder": "—",
+      "items": [
+        {
+          "id": "7edb3881-2a69-4eeb-bfc1-c60cc22a0994",
+          "goodsReceivedNoteId": "6c96abe7-6ff7-4b48-af67-387d377caf61",
+          "itemId": "1d8f1dc7-6378-47e2-bfff-d82c4bc699d2",
+          "description": "Universal Truck Tyre",
+          "qty": "1",
+          "item": {
+            "id": "1d8f1dc7-6378-47e2-bfff-d82c4bc699d2",
+            "itemCode": "MI0084",
+            "itemName": "315/80 R22.5 UNIVERSAL",
+            "description": "Universal Truck Tyre",
+            "unitName": "Each",
+            "valuationMethod": "WeightedAverage",
+            "isInactive": false,
+            "createdAt": "2026-06-12T21:21:05.861Z",
+            "purchasePrice": "40.86",
+            "sellingPrice": "40.86",
+            "marginPercentage": "0",
+            "qtyOnHand": "8031",
+            "imageUrl": null,
+            "category": "Tyres"
+          }
+        }
+      ],
+      "isPurchaseInvoice": false
+    },
+    {
+      "id": "95b462c8-bc56-4c53-9389-5c2fc0875320",
+      "reference": "GRN-0004",
+      "receivedDate": "13.08.2026",
+      "supplierId": "ffb783ec-9775-40b2-8a5c-e2a4c1ba6c3d",
+      "purchaseOrderId": null,
+      "description": "Received items for SHP-0001",
+      "status": "Approved",
+      "inventoryLocation": "Default Inventory Location",
+      "createdAt": "2026-08-13T21:16:28.893Z",
+      "supplier": "\tACTIVE GENERAL MOTORS LIMITED",
+      "purchaseOrder": "—",
+      "items": [
+        {
+          "id": "bb7c4ed7-98b4-4942-ac6b-7674906d8688",
+          "goodsReceivedNoteId": "95b462c8-bc56-4c53-9389-5c2fc0875320",
+          "itemId": "50a52c0d-808e-4143-8067-c97e757e3984",
+          "description": "12V 68032MF Battery",
+          "qty": "1",
+          "item": {
+            "id": "50a52c0d-808e-4143-8067-c97e757e3984",
+            "itemCode": "MI0848",
+            "itemName": "DIN180MF 12V BATTERY",
+            "description": "12V 68032MF Battery",
+            "unitName": "Each",
+            "valuationMethod": "WeightedAverage",
+            "isInactive": false,
+            "createdAt": "2026-06-12T21:21:05.867Z",
+            "purchasePrice": "20.43",
+            "sellingPrice": "20.43",
+            "marginPercentage": "0",
+            "qtyOnHand": "4061",
+            "imageUrl": null,
+            "category": "Batteries"
+          }
+        }
+      ],
+      "isPurchaseInvoice": false
+    },
+    {
+      "id": "1c5d8857-9ad0-4aa6-8157-1bc149743a08",
+      "reference": "GRN-0003",
+      "receivedDate": "13.08.2026",
+      "supplierId": "ffb783ec-9775-40b2-8a5c-e2a4c1ba6c3d",
+      "purchaseOrderId": null,
+      "description": "Received items for SHP-0001",
+      "status": "Approved",
+      "inventoryLocation": "Default Inventory Location",
+      "createdAt": "2026-08-13T21:09:03.890Z",
+      "supplier": "\tACTIVE GENERAL MOTORS LIMITED",
+      "purchaseOrder": "—",
+      "items": [
+        {
+          "id": "e5888455-19e9-4d9d-bcdd-3ef67efba007",
+          "goodsReceivedNoteId": "1c5d8857-9ad0-4aa6-8157-1bc149743a08",
+          "itemId": "50a52c0d-808e-4143-8067-c97e757e3984",
+          "description": "12V 68032MF Battery",
+          "qty": "19",
+          "item": {
+            "id": "50a52c0d-808e-4143-8067-c97e757e3984",
+            "itemCode": "MI0848",
+            "itemName": "DIN180MF 12V BATTERY",
+            "description": "12V 68032MF Battery",
+            "unitName": "Each",
+            "valuationMethod": "WeightedAverage",
+            "isInactive": false,
+            "createdAt": "2026-06-12T21:21:05.867Z",
+            "purchasePrice": "20.43",
+            "sellingPrice": "20.43",
+            "marginPercentage": "0",
+            "qtyOnHand": "4061",
+            "imageUrl": null,
+            "category": "Batteries"
+          }
+        }
+      ],
+      "isPurchaseInvoice": false
+    }
+  ]
+}

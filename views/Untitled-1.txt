@@ -1,0 +1,11 @@
+
+WHAT IS USE OF .BAT FILE
+WHAT IS USE OF .BAT FILE
+12:08 AM
+Prioritizing Tool Usage
+
+I'm now focusing on tool selection, emphasizing specific tools over general ones where possible. The goal is to optimize efficiency by leveraging tools like 'view_file' directly, rather than resorting to broader, less direct methods. I'm aiming for targeted actions.
+
+A .bat file, also known as a batch file, is a script file used in DOS, OS/2, and Windows operating systems. It contains a series of commands that are executed in sequence by the command-line interpreter (like cmd.exe).
+
+Here are the primary uses of .bat files:

@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); async function main() { console.log('Customers:', await prisma.customer.count()); console.log('Accounts:', await prisma.chartOfAccount.count()); console.log('Transaction Items:', await prisma.transactionItem.count()); } main().finally(() => prisma.$disconnect());

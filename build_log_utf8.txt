@@ -1,0 +1,136 @@
+﻿
+> cloudmanager-accounting@0.0.0 build
+> vite build
+
+[36mvite v6.4.1 [32mbuilding for production...[36m[39m
+transforming...
+node.exe : Error: 
+Cannot apply unknown 
+utility class 
+`bg-background`
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (Error: Can   
+ not a...`bg-backg    
+round`:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+    at 
+onInvalidCandidate (C:
+\ABCDEERP\node_modules
+\tailwindcss\dist\lib.
+js:21:1511)
+    at Ee (C:\ABCDEERP
+\node_modules\tailwind
+css\dist\lib.js:16:370
+66)
+    at C:\ABCDEERP\nod
+e_modules\tailwindcss\
+dist\lib.js:21:355
+    at Pr (C:\ABCDEERP
+\node_modules\tailwind
+css\dist\lib.js:3:1733
+)
+    at _ (C:\ABCDEERP\
+node_modules\tailwindc
+ss\dist\lib.js:3:1377)
+    at Te (C:\ABCDEERP
+\node_modules\tailwind
+css\dist\lib.js:21:172
+)
+    at pn (C:\ABCDEERP
+\node_modules\tailwind
+css\dist\lib.js:38:294
+)
+    at async dn (C:\AB
+CDEERP\node_modules\ta
+ilwindcss\dist\lib.js:
+38:631)
+    at async Xr (C:\AB
+CDEERP\node_modules\@t
+ailwindcss\node\dist\i
+ndex.js:10:3417)
+    at async N (C:\ABC
+DEERP\node_modules\@ta
+ilwindcss\postcss\dist
+\index.js:10:3979)
+[32mÔ£ô[39m 4 modules transformed.
+[31mÔ£ù[39m Build 
+failed in 299ms
+[31merror during 
+build:
+[31m[vite:css] 
+[postcss] 
+tailwindcss: C:/ABCDEE
+RP/index.css:1:1: 
+Cannot apply unknown 
+utility class 
+`bg-background`[31m
+file: [36mC:/ABCDEERP
+/index.css:1:0[31m
+    at Input.error (C:
+\ABCDEERP\node_modules
+\postcss\lib\input.js:
+135:16)
+    at Root.error (C:\
+ABCDEERP\node_modules\
+postcss\lib\node.js:14
+6:32)
+    at Object.Once (C:
+\ABCDEERP\node_modules
+\@tailwindcss\postcss\
+dist\index.js:10:6913)
+    at async 
+LazyResult.runAsync (C
+:\ABCDEERP\node_module
+s\postcss\lib\lazy-res
+ult.js:293:11)
+    at async 
+runPostCSS (file:///C:
+/ABCDEERP/node_modules
+/vite/dist/node/chunks
+/dep-D4NMHUTW.js:43853
+:21)
+    at async 
+compilePostCSS (file:/
+//C:/ABCDEERP/node_mod
+ules/vite/dist/node/ch
+unks/dep-D4NMHUTW.js:4
+3823:18)
+    at async 
+compileCSS (file:///C:
+/ABCDEERP/node_modules
+/vite/dist/node/chunks
+/dep-D4NMHUTW.js:43678
+:27)
+    at async 
+Object.handler (file:/
+//C:/ABCDEERP/node_mod
+ules/vite/dist/node/ch
+unks/dep-D4NMHUTW.js:4
+2994:11)
+    at async 
+transform (file:///C:/
+ABCDEERP/node_modules/
+rollup/dist/es/shared/
+node-entry.js:21269:16
+)
+    at async ModuleLoa
+der.addModuleSource (f
+ile:///C:/ABCDEERP/nod
+e_modules/rollup/dist/
+es/shared/node-entry.j
+s:21497:36)[39m

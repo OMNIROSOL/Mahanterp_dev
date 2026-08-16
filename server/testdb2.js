@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); async function main() { const items = await prisma.purchasePlanItem.findMany({ where: { planId: '74484389-a2d0-4efb-b9e3-a02395075469' } }); items.forEach(i => console.log('Item:', i.itemId, 'orders:', i.monthlyOrders, 'finalQty:', i.finalOrderQty)); process.exit(0); } main();

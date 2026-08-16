@@ -1,0 +1,113 @@
+﻿
+> cloudmanager-accounting@0.0.0 lint
+> tsc --noEmit
+
+AIAssistant.tsx(3,38): error TS2307: Cannot find module '../services/geminiService' or its corresponding type declarations.
+AIAssistant.tsx(4,29): error TS2307: Cannot find module '../types' or its corresponding type declarations.
+prisma.config.ts(4,30): error TS2307: Cannot find module 'prisma/config' or its corresponding type declarations.
+server/index.ts(101,74): error TS2353: Object literal may only specify known properties, and 'qtyOnHand' does not exist in type '(Without<ItemCreateInput, ItemUncheckedCreateInput> & ItemUncheckedCreateInput) | (Without<...> & ItemCreateInput)'.
+server/index.ts(115,74): error TS2353: Object literal may only specify known properties, and 'qtyOnHand' does not exist in type '(Without<ItemUpdateInput, ItemUncheckedUpdateInput> & ItemUncheckedUpdateInput) | (Without<...> & ItemUpdateInput)'.
+server/index.ts(454,44): error TS2561: Object literal may only specify known properties, but 'billingAddress' does not exist in type '(Without<suppliersCreateInput, suppliersUncheckedCreateInput> & suppliersUncheckedCreateInput) | (Without<...> & suppliersCreateInput)'. Did you mean to write 'billing_address'?
+server/index.ts(468,44): error TS2561: Object literal may only specify known properties, but 'billingAddress' does not exist in type '(Without<suppliersUpdateInput, suppliersUncheckedUpdateInput> & suppliersUncheckedUpdateInput) | (Without<...> & suppliersUpdateInput)'. Did you mean to write 'billing_address'?
+shared/Badge.tsx(2,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/Button.tsx(2,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/Card.tsx(2,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/DataTable.tsx(14,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/FloatingActionBar.tsx(3,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/FormInput.tsx(2,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/Modal.tsx(4,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/Navbar.tsx(14,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/PremiumInput.tsx(2,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/Sidebar.tsx(24,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+shared/Tooltip.tsx(2,20): error TS2307: Cannot find module '../../utils/cn' or its corresponding type declarations.
+SummaryCards.tsx(3,34): error TS2307: Cannot find module '../types' or its corresponding type declarations.
+views/BatchPrintView.tsx(27,60): error TS2304: Cannot find name 'Customer'.
+views/InventoryItemsView.tsx(24,14): error TS2352: Conversion of type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' to type 'ScreenPermission' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' is missing the following properties from type 'ScreenPermission': screenName, view, add, edit, and 2 more.
+views/InvoicesView.tsx(36,18): error TS2352: Conversion of type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' to type 'ScreenPermission' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' is missing the following properties from type 'ScreenPermission': screenName, view, add, edit, and 2 more.
+views/InvoicesView.tsx(563,47): error TS2304: Cannot find name 'mockInventory'.
+views/InvoicesView.tsx(648,30): error TS2304: Cannot find name 'customers'.
+views/InvoicesView.tsx(810,21): error TS2322: Type '{ data: any; columns: any; tableClassName: string; className: string; hideDefaultPagination: true; stickyHeader: true; disableInternalScroll: true; emptyMessage: any; tableFooter: any; }' is not assignable to type 'DataTableProps<{ id?: string | number; }>'.
+  Property 'emptyMessage' does not exist on type 'DataTableProps<{ id?: string | number; }>'.
+views/NewCreditNoteView.tsx(624,102): error TS2339: Property 'getFooters' does not exist on type '{ getCustomers: () => Promise<any>; createCustomer: (data: any) => Promise<any>; updateCustomer: (id: string, data: any) => Promise<any>; getItems: () => Promise<any>; ... 33 more ...; getNextReference: (type: "customer" | ... 6 more ... | "purchase-order") => Promise<...>; }'.
+views/NewPurchaseInvoiceView.tsx(127,71): error TS2345: Argument of type '"purchase-invoice"' is not assignable to parameter of type '"customer" | "invoice" | "quote" | "order" | "delivery" | "supplier" | "purchase-quote" | "purchase-order"'.
+views/NewPurchaseInvoiceView.tsx(219,34): error TS2551: Property 'createPurchaseInvoice' does not exist on type '{ getCustomers: () => Promise<any>; createCustomer: (data: any) => Promise<any>; updateCustomer: (id: string, data: any) => Promise<any>; getItems: () => Promise<any>; ... 33 more ...; getNextReference: (type: "customer" | ... 6 more ... | "purchase-order") => Promise<...>; }'. Did you mean 'getPurchaseInvoices'?
+views/NewPurchaseInvoiceView.tsx(721,84): error TS2304: Cannot find name 'getFooters'.
+views/NewPurchaseInvoiceView.tsx(727,66): error TS2304: Cannot find name 'getFooters'.
+views/NewPurchaseOrderView.tsx(627,76): error TS2304: Cannot find name 'getFooters'.
+views/NewPurchaseOrderView.tsx(633,58): error TS2304: Cannot find name 'getFooters'.
+views/NewReceiptView.tsx(138,75): error TS2345: Argument of type '"receipt"' is not assignable to parameter of type '"customer" | "invoice" | "quote" | "order" | "delivery" | "supplier" | "purchase-quote" | "purchase-order"'.
+views/NewSalesInvoiceView.tsx(193,44): error TS2304: Cannot find name 'marginThreshold'.
+views/NewSalesInvoiceView.tsx(200,16): error TS2304: Cannot find name 'marginThreshold'.
+views/NewSalesInvoiceView.tsx(658,97): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(663,77): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(667,86): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(675,95): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(690,103): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(691,107): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(691,161): error TS2304: Cannot find name 'marginThreshold'.
+views/NewSalesInvoiceView.tsx(697,79): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(700,93): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(701,95): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesInvoiceView.tsx(701,149): error TS2304: Cannot find name 'marginThreshold'.
+views/NewSalesInvoiceView.tsx(1011,76): error TS2304: Cannot find name 'getFooters'.
+views/NewSalesInvoiceView.tsx(1019,58): error TS2304: Cannot find name 'getFooters'.
+views/NewSalesOrderView.tsx(177,25): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(185,33): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(205,17): error TS2552: Cannot find name 'setAllCustomers'. Did you mean 'setCustomers'?
+views/NewSalesOrderView.tsx(206,17): error TS2304: Cannot find name 'setDbInvoices'.
+views/NewSalesOrderView.tsx(207,17): error TS2304: Cannot find name 'setDbQuotes'.
+views/NewSalesOrderView.tsx(208,17): error TS2304: Cannot find name 'setDbInventory'.
+views/NewSalesOrderView.tsx(272,30): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(279,9): error TS2304: Cannot find name 'dbInvoices'.
+views/NewSalesOrderView.tsx(294,9): error TS2304: Cannot find name 'dbQuotes'.
+views/NewSalesOrderView.tsx(317,19): error TS2304: Cannot find name 'dbInvoices'.
+views/NewSalesOrderView.tsx(317,31): error TS2304: Cannot find name 'dbQuotes'.
+views/NewSalesOrderView.tsx(323,35): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(338,33): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(506,58): error TS2304: Cannot find name 'allCustomers'.
+views/NewSalesOrderView.tsx(513,42): error TS2304: Cannot find name 'allCustomers'.
+views/NewSalesOrderView.tsx(573,66): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(612,101): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesOrderView.tsx(616,81): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesOrderView.tsx(620,90): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesOrderView.tsx(628,99): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesOrderView.tsx(646,107): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesOrderView.tsx(647,111): error TS2304: Cannot find name 'mockInventory'.
+views/NewSalesOrderView.tsx(653,82): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(656,96): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(657,98): error TS2304: Cannot find name 'dbInventory'.
+views/NewSalesOrderView.tsx(951,98): error TS2339: Property 'getFooters' does not exist on type '{ getCustomers: () => Promise<any>; createCustomer: (data: any) => Promise<any>; updateCustomer: (id: string, data: any) => Promise<any>; getItems: () => Promise<any>; ... 33 more ...; getNextReference: (type: "customer" | ... 6 more ... | "purchase-order") => Promise<...>; }'.
+views/PurchaseOrdersView.tsx(116,36): error TS2304: Cannot find name 'apiService'.
+views/PurchaseQuotesView.tsx(70,5): error TS2304: Cannot find name 'useEffect'.
+views/PurchaseQuotesView.tsx(87,5): error TS2304: Cannot find name 'useEffect'.
+views/PurchaseQuotesView.tsx(148,5): error TS2304: Cannot find name 'useEffect'.
+views/SalesDashboard.tsx(487,22): error TS2304: Cannot find name 'mockSalesQuotes'.
+views/SalesOrdersView.tsx(34,18): error TS2352: Conversion of type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' to type 'ScreenPermission' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' is missing the following properties from type 'ScreenPermission': screenName, view, add, edit, and 2 more.
+views/SalesOrdersView.tsx(231,32): error TS2304: Cannot find name 'mockSalesOrders'.
+views/SalesOrdersView.tsx(523,21): error TS2322: Type '{ data: any; columns: any; tableClassName: string; className: string; hideDefaultPagination: true; stickyHeader: true; disableInternalScroll: true; emptyMessage: any; tableFooter: any; }' is not assignable to type 'DataTableProps<{ id?: string | number; }>'.
+  Property 'emptyMessage' does not exist on type 'DataTableProps<{ id?: string | number; }>'.
+views/SalesQuotesView.tsx(38,18): error TS2352: Conversion of type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' to type 'ScreenPermission' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ screenId: string; canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; }' is missing the following properties from type 'ScreenPermission': screenName, view, add, edit, and 2 more.
+views/ViewCreditNoteView.tsx(43,32): error TS2339: Property 'getCreditNotes' does not exist on type '{ getCustomers: () => Promise<any>; createCustomer: (data: any) => Promise<any>; updateCustomer: (id: string, data: any) => Promise<any>; getItems: () => Promise<any>; ... 33 more ...; getNextReference: (type: "customer" | ... 6 more ... | "purchase-order") => Promise<...>; }'.
+views/ViewPurchaseInvoiceView.tsx(158,81): error TS2339: Property 'customer' does not exist on type 'PurchaseInvoice'.
+views/ViewPurchaseInvoiceView.tsx(245,133): error TS2339: Property 'customTitle' does not exist on type 'PurchaseInvoice'.
+views/ViewPurchaseOrderView.tsx(61,21): error TS2304: Cannot find name 'tax'.
+views/ViewPurchaseOrderView.tsx(62,21): error TS2304: Cannot find name 'subtotal'.
+views/ViewPurchaseOrderView.tsx(64,21): error TS2304: Cannot find name 'subtotal'.
+views/ViewPurchaseOrderView.tsx(65,21): error TS2304: Cannot find name 'tax'.
+views/ViewPurchaseOrderView.tsx(71,17): error TS2304: Cannot find name 'tax'.
+views/ViewPurchaseOrderView.tsx(72,17): error TS2304: Cannot find name 'subtotal'.
+views/ViewPurchaseOrderView.tsx(72,41): error TS2304: Cannot find name 'tax'.
+views/ViewPurchaseOrderView.tsx(74,17): error TS2304: Cannot find name 'subtotal'.
+views/ViewPurchaseOrderView.tsx(75,17): error TS2304: Cannot find name 'tax'.
+views/ViewPurchaseOrderView.tsx(82,74): error TS2304: Cannot find name 'subtotal'.
+views/ViewPurchaseOrderView.tsx(86,18): error TS18004: No value exists in scope for the shorthand property 'subtotal'. Either declare one or provide an initializer.
+views/ViewPurchaseOrderView.tsx(86,28): error TS18004: No value exists in scope for the shorthand property 'tax'. Either declare one or provide an initializer.
+views/ViewPurchaseOrderView.tsx(86,40): error TS2304: Cannot find name 'subtotal'.
+views/ViewPurchaseOrderView.tsx(86,51): error TS2304: Cannot find name 'tax'.
+views/ViewPurchaseOrderView.tsx(332,148): error TS2339: Property 'customTitle' does not exist on type 'PurchaseOrder'.
+views/ViewSalesInvoiceView.tsx(175,38): error TS2304: Cannot find name 'pdfRef'.
+views/ViewSalesInvoiceView.tsx(179,49): error TS2304: Cannot find name 'pdfRef'.
