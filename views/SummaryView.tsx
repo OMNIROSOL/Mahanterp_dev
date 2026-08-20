@@ -102,6 +102,7 @@ const SummaryView = () => {
                 </div>
                 <div className="flex space-x-3">
                     <button onClick={() => window.print()} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold text-[13px] rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95">Print</button>
+                    <button onClick={() => navigate('/trial-balance')} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold text-[13px] rounded-xl hover:bg-slate-50 transition-all active:scale-95">Trial Balance</button>
                     <button onClick={() => navigate('/accounts')} className="px-5 py-2.5 bg-indigo-50 text-indigo-600 font-bold text-[13px] rounded-xl hover:bg-indigo-100 transition-all active:scale-95">Manage Accounts</button>
                 </div>
             </div>

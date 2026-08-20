@@ -174,6 +174,7 @@ export interface Account {
   name: string;
   balance: number;
   type: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense' | 'Income';
+  accountType?: string;
   isPaymentAccount?: boolean;
   code?: string;
 }

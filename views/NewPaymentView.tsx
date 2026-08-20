@@ -116,6 +116,8 @@ const NewPaymentView = () => {
     const [expenseItems, setExpenseItems] = useState<any[]>([]);
     const [customers, setCustomers] = useState<any[]>([]);
     const [suppliers, setSuppliers] = useState<any[]>([]);
+    const [unpaidBills, setUnpaidBills] = useState<any[]>([]);
+    const [allocations, setAllocations] = useState<Record<string, string>>({});
 
     useEffect(() => {
         const fetchData = async () => {
@@ -171,6 +173,13 @@ const NewPaymentView = () => {
                                 };
                             }));
                         }
+                        if (payment.allocations?.length) {
+                            const map: Record<string, string> = {};
+                            payment.allocations.forEach((a: any) => {
+                                map[a.invoiceId] = String(a.amount);
+                            });
+                            setAllocations(map);
+                        }
                     }
                 } else {
                     const nextRef = await apiService.getNextReference('payment');
@@ -184,6 +193,26 @@ const NewPaymentView = () => {
         };
         fetchData();
     }, [id]);
+
+    useEffect(() => {
+        const loadUnpaid = async () => {
+            if (paidToContact !== 'Supplier' || !paidToOptional) {
+                setUnpaidBills([]);
+                return;
+            }
+            try {
+                const invs = await apiService.getPurchaseInvoices();
+                const unpaid = (invs || []).filter((inv: any) => {
+                    const name = inv.supplier || inv.suppliers?.name || '';
+                    return name === paidToOptional && Number(inv.balanceDue || 0) > 0.01;
+                });
+                setUnpaidBills(unpaid);
+            } catch (err) {
+                console.error('Failed to load unpaid purchase invoices:', err);
+            }
+        };
+        loadUnpaid();
+    }, [paidToContact, paidToOptional]);
 
     const updateItem = (itemId: number, field: string, value: string) => {
         setItems(items.map(item => {
@@ -266,12 +295,15 @@ const NewPaymentView = () => {
             status: 'Completed',
             items: items.map(it => ({
                 item: it.item,
-                account: it.account,
+                account: Object.values(allocations).some(v => parseFloat(v) > 0) && it.account === 'Suspense' ? 'Accounts Payable' : it.account,
                 description: it.description,
                 qty: parseFloat(it.qty) || 0,
                 amount: parseFloat(it.amount) || 0,
                 total: parseFloat(it.total) || 0
-            }))
+            })),
+            allocations: Object.entries(allocations)
+                .filter(([, amt]) => parseFloat(amt) > 0)
+                .map(([invoiceId, amt]) => ({ invoiceId, amount: parseFloat(amt) }))
         };
 
         try {
@@ -425,6 +457,47 @@ const NewPaymentView = () => {
                             </div>
                         </div>
                     </section>
+
+                    {paidToContact === 'Supplier' && unpaidBills.length > 0 && (
+                        <section className="space-y-4">
+                            <div className="flex items-center space-x-4">
+                                <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase">Allocate to Purchase Invoices</h2>
+                            </div>
+                            <p className="text-[12px] text-slate-500">Apply this payment against unpaid supplier bills. Leave blank to auto-allocate oldest first.</p>
+                            <div className="overflow-hidden rounded-2xl border border-slate-100">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Invoice</th>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Due</th>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Balance Due</th>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Apply</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {unpaidBills.map((inv: any) => (
+                                            <tr key={inv.id} className="border-t border-slate-50">
+                                                <td className="px-4 py-3 text-[13px] font-bold text-slate-800">{inv.reference}</td>
+                                                <td className="px-4 py-3 text-[13px] text-slate-500">{inv.dueDate || ''}</td>
+                                                <td className="px-4 py-3 text-[13px] font-bold text-right">{Number(inv.balanceDue || 0).toFixed(2)}</td>
+                                                <td className="px-4 py-3">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={allocations[inv.id] || ''}
+                                                        onChange={(e) => setAllocations(prev => ({ ...prev, [inv.id]: e.target.value }))}
+                                                        className="w-32 ml-auto block bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[13px] font-semibold text-right"
+                                                        placeholder="0.00"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    )}
 
                     {/* Line Items */}
                     <section className="space-y-6 pt-0">

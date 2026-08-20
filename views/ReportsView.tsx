@@ -126,6 +126,13 @@ const ReportsView: React.FC = () => {
       icon: Wallet,
       reports: [
         {
+          title: "Trial Balance",
+          description: "Debit and credit totals for every ledger account. Totals must match.",
+          icon: Wallet,
+          path: "/trial-balance",
+          color: "text-indigo-600"
+        },
+        {
           title: "Financial Overview",
           description: "Summary of chart of accounts, bank balances, and financial health.",
           icon: Wallet,

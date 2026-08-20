@@ -60,8 +60,9 @@ const AccountsView = () => {
         if (searchQuery) {
             const query = searchQuery.toLowerCase();
             result = result.filter(a => 
-                a.name.toLowerCase().includes(query) || 
-                a.type.toLowerCase().includes(query)
+                (a.name || '').toLowerCase().includes(query) || 
+                (a.type || a.accountType || '').toLowerCase().includes(query) ||
+                (a.code || '').toLowerCase().includes(query)
             );
         }
         if (statusFilter !== 'All') {
