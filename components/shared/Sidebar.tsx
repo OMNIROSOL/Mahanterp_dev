@@ -146,6 +146,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       id: 'summary',
       submenu: [
         { label: 'Summary', path: '/summary', id: 'summary' },
+        { label: 'Trial Balance', path: '/trial-balance', id: 'trial-balance' },
         { label: 'Chart of Accounts', path: '/accounts', id: 'accounts' },
         { label: 'Bank Accounts', path: '/account', id: 'bank-accounts' },
         { label: 'Receipts', path: '/receipts', id: 'receipts' },

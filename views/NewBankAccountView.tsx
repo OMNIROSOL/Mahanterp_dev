@@ -93,9 +93,10 @@ const NewBankAccountView = () => {
         try {
             await apiService.createBankAccount(newAccount);
             navigate('/account');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to create bank account:', err);
-            alert('Failed to create bank account in database');
+            const message = err?.response?.data?.error || err?.message || 'Failed to create bank account in database';
+            alert(message);
         }
     };
 

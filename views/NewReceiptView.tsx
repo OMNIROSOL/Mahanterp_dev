@@ -92,7 +92,7 @@ const NewReceiptView = () => {
     const [receivedInAccount, setReceivedInAccount] = useState('');
     const [description, setDescription] = useState('');
 
-    const [items, setItems] = useState([{ id: Date.now(), item: '', account: 'Suspense', description: '', qty: '1', discount: '', amount: '', total: '0' }]);
+    const [items, setItems] = useState([{ id: Date.now(), item: '', account: 'Accounts Receivable', description: '', qty: '1', discount: '', amount: '', total: '0' }]);
     const [fileName, setFileName] = useState('No file chosen');
 
     const [options, setOptions] = useState({
@@ -116,6 +116,8 @@ const NewReceiptView = () => {
     const [incomeItems, setIncomeItems] = useState<any[]>([]);
     const [customers, setCustomers] = useState<any[]>([]);
     const [suppliers, setSuppliers] = useState<any[]>([]);
+    const [unpaidInvoices, setUnpaidInvoices] = useState<any[]>([]);
+    const [allocations, setAllocations] = useState<Record<string, string>>({});
 
     useEffect(() => {
         const fetchData = async () => {
@@ -171,6 +173,13 @@ const NewReceiptView = () => {
                                 };
                             }));
                         }
+                        if (receipt.allocations?.length) {
+                            const map: Record<string, string> = {};
+                            receipt.allocations.forEach((a: any) => {
+                                map[a.invoiceId] = String(a.amount);
+                            });
+                            setAllocations(map);
+                        }
                     }
                 } else {
                     const nextRef = await apiService.getNextReference('receipt');
@@ -184,6 +193,54 @@ const NewReceiptView = () => {
         };
         fetchData();
     }, [id]);
+
+    useEffect(() => {
+        const loadUnpaid = async () => {
+            if (paidByContact !== 'Customer' || !paidByOptional) {
+                setUnpaidInvoices([]);
+                return;
+            }
+            try {
+                const invs = await apiService.getInvoices();
+                const unpaid = (invs || []).filter((inv: any) => {
+                    const name = typeof inv.customer === 'string' ? inv.customer : (inv.customer?.name || '');
+                    const due = Number(inv.balanceDue ?? inv.grandTotal ?? inv.invoiceAmount ?? 0);
+                    return name === paidByOptional && due > 0.01 && String(inv.status || '').toLowerCase() !== 'paid';
+                });
+                setUnpaidInvoices(unpaid);
+
+                if (id || unpaid.length === 0) return;
+                if (new URLSearchParams(location.search).get('amount')) return;
+
+                const map: Record<string, string> = {};
+                let outstanding = 0;
+                unpaid.forEach((inv: any) => {
+                    const due = Number(inv.balanceDue ?? inv.grandTotal ?? inv.invoiceAmount ?? 0);
+                    map[inv.id] = due.toFixed(2);
+                    outstanding += due;
+                });
+                setAllocations(map);
+
+                const amt = outstanding.toFixed(2);
+                const desc = unpaid.length === 1
+                    ? `Payment for Invoice ${unpaid[0].reference}`
+                    : `Receipt from ${paidByOptional}`;
+                setItems([{
+                    id: Date.now(),
+                    item: '',
+                    account: 'Accounts Receivable',
+                    description: desc,
+                    qty: '1',
+                    discount: '',
+                    amount: amt,
+                    total: amt
+                }]);
+            } catch (err) {
+                console.error('Failed to load unpaid invoices:', err);
+            }
+        };
+        loadUnpaid();
+    }, [paidByContact, paidByOptional, id]);
 
     const updateItem = (itemId: number, field: string, value: string) => {
         setItems(items.map(item => {
@@ -201,6 +258,13 @@ const NewReceiptView = () => {
                         newItem.description = selectedItem.description;
                     }
                 }
+                if (field === 'total') {
+                    const q = parseFloat(newItem.qty) || 1;
+                    newItem.qty = String(q);
+                    newItem.amount = (parseFloat(value) / q || 0).toFixed(2);
+                    newItem.total = value;
+                    return newItem;
+                }
                 const q = parseFloat(newItem.qty) || 0;
                 const a = parseFloat(newItem.amount) || 0;
                 const d = parseFloat(newItem.discount) || 0;
@@ -212,7 +276,27 @@ const NewReceiptView = () => {
         }));
     };
 
-    const addLine = () => setItems([...items, { id: Date.now(), item: '', account: 'Suspense', description: '', qty: '1', discount: '', amount: '', total: '0' }]);
+    const syncLineFromAllocations = (nextAlloc: Record<string, string>) => {
+        const applied = Object.values(nextAlloc).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+        const amt = applied.toFixed(2);
+        setItems(prev => {
+            const idx = prev.findIndex(i => (i.account || '').toLowerCase().includes('receivable'));
+            const line = {
+                id: idx >= 0 ? prev[idx].id : Date.now(),
+                item: idx >= 0 ? prev[idx].item : '',
+                account: 'Accounts Receivable',
+                description: idx >= 0 ? prev[idx].description : (paidByOptional ? `Receipt from ${paidByOptional}` : ''),
+                qty: '1',
+                discount: '',
+                amount: amt,
+                total: amt
+            };
+            if (idx >= 0) return prev.map((it, i) => (i === idx ? line : it));
+            return [line, ...prev.filter(it => (parseFloat(it.total) || 0) > 0)];
+        });
+    };
+
+    const addLine = () => setItems([...items, { id: Date.now(), item: '', account: 'Accounts Receivable', description: '', qty: '1', discount: '', amount: '', total: '0' }]);
     const copyLine = (itemId: number) => {
         const item = items.find(i => i.id === itemId);
         if (item) setItems([...items, { ...item, id: Date.now() + Math.random() }]);
@@ -266,12 +350,15 @@ const NewReceiptView = () => {
             status: 'Completed',
             items: items.map(it => ({
                 item: it.item,
-                account: it.account,
+                account: Object.values(allocations).some(v => parseFloat(v) > 0) && it.account === 'Suspense' ? 'Accounts Receivable' : it.account,
                 description: it.description,
                 qty: parseFloat(it.qty) || 0,
                 amount: parseFloat(it.amount) || 0,
                 total: parseFloat(it.total) || 0
-            }))
+            })),
+            allocations: Object.entries(allocations)
+                .filter(([, amt]) => parseFloat(amt) > 0)
+                .map(([invoiceId, amt]) => ({ invoiceId, amount: parseFloat(amt) }))
         };
 
         try {
@@ -426,6 +513,51 @@ const NewReceiptView = () => {
                         </div>
                     </section>
 
+                    {paidByContact === 'Customer' && unpaidInvoices.length > 0 && (
+                        <section className="space-y-4">
+                            <div className="flex items-center space-x-4">
+                                <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase">Allocate to Invoices</h2>
+                            </div>
+                            <p className="text-[12px] text-slate-500">Apply this receipt against unpaid sales invoices. Leave blank to auto-allocate oldest first.</p>
+                            <div className="overflow-hidden rounded-2xl border border-slate-100">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Invoice</th>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Date</th>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Balance Due</th>
+                                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Apply</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {unpaidInvoices.map((inv: any) => (
+                                            <tr key={inv.id} className="border-t border-slate-50">
+                                                <td className="px-4 py-3 text-[13px] font-bold text-slate-800">{inv.reference}</td>
+                                                <td className="px-4 py-3 text-[13px] text-slate-500">{inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : ''}</td>
+                                                <td className="px-4 py-3 text-[13px] font-bold text-right">{Number(inv.balanceDue || 0).toFixed(2)}</td>
+                                                <td className="px-4 py-3">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={allocations[inv.id] || ''}
+                                                        onChange={(e) => {
+                                                            const next = { ...allocations, [inv.id]: e.target.value };
+                                                            setAllocations(next);
+                                                            syncLineFromAllocations(next);
+                                                        }}
+                                                        className="w-32 ml-auto block bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[13px] font-semibold text-right"
+                                                        placeholder="0.00"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    )}
+
                     {/* Line Items */}
                     <section className="space-y-6 pt-0">
                         <div className="flex items-center justify-between">
@@ -524,11 +656,18 @@ const NewReceiptView = () => {
                                                     />
                                                 </td>
                                             )}
-                                            <td className="px-4 py-4 text-right tabular-nums">
-                                                <span className="text-[10px] font-black text-slate-400 mr-1.5 opacity-60 uppercase">ZMW</span>
-                                                <span className="text-[13px] font-black text-slate-800">
-                                                    {(parseFloat(item.total) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </span>
+                                            <td className="px-4 py-4">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase">ZMW</span>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={item.total}
+                                                        onChange={(e) => updateItem(item.id, 'total', e.target.value)}
+                                                        className="w-28 bg-transparent border-none p-0 text-[13px] font-black text-slate-800 text-right outline-none"
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
                                             </td>
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">

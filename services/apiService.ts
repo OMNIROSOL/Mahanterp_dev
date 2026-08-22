@@ -68,6 +68,11 @@ export const apiService = {
   getAccounts: () => api.get('/accounts').then(res => res.data),
   getSummary: () => api.get('/summary').then(res => res.data),
   getAccount: (id: string) => api.get(`/accounts/${id}`).then(res => res.data),
+  getAccountLedger: (id: string, params?: { from?: string; to?: string }) =>
+    api.get(`/accounts/${id}/ledger`, { params }).then(res => res.data),
+  getTrialBalance: (params?: { from?: string; to?: string }) =>
+    api.get('/trial-balance', { params }).then(res => res.data),
+  backfillLedger: () => api.post('/ledger/backfill').then(res => res.data),
   createAccount: (data: any) => api.post('/accounts', data).then(res => res.data),
   updateAccount: (id: string, data: any) => api.put(`/accounts/${id}`, data).then(res => res.data),
 
@@ -88,6 +93,7 @@ export const apiService = {
 
   getInvoices: () => api.get('/invoices').then(res => res.data),
   getInvoice: (id: string) => api.get(`/invoices/${id}`).then(res => res.data),
+  getInvoiceTransactions: (id: string) => api.get(`/invoices/${id}/transactions`).then(res => res.data),
   createInvoice: (data: any) => api.post('/invoices', data).then(res => res.data),
   updateInvoice: (id: string, data: any) => api.put(`/invoices/${id}`, data).then(res => res.data),
   updateInvoiceStatus: (id: string, status: string) => api.patch(`/invoices/${id}`, { status }).then(res => res.data),
@@ -212,6 +218,7 @@ export const apiService = {
 
     // Accounting & Finance
     { id: 'accounts', name: 'Chart of Accounts', category: 'Accounting & Finance' },
+    { id: 'trial-balance', name: 'Trial Balance', category: 'Accounting & Finance' },
     { id: 'bank-accounts', name: 'Bank Accounts', category: 'Accounting & Finance' },
     { id: 'receipts', name: 'Customer Receipts', category: 'Accounting & Finance' },
     { id: 'payments', name: 'Supplier Payments', category: 'Accounting & Finance' },

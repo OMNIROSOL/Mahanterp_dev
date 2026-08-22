@@ -23,12 +23,11 @@ describe('Expense Claims API', () => {
   afterAll(async () => {
     // Teardown everything
     if (createdExpenseClaimId) {
+      await prisma.ledgerEntry.deleteMany({ where: { source_document_id: createdExpenseClaimId } });
       await prisma.expenseClaimLine.deleteMany({ where: { expenseClaimId: createdExpenseClaimId } });
       await prisma.expenseClaim.delete({ where: { id: createdExpenseClaimId } });
     }
     
-    // We also need to clean up Ledger Entries created by the expense claim
-    // The easiest way is to delete ledger entries linked to the test account
     await prisma.ledgerEntry.deleteMany({ where: { accountId: createdAccountId } });
 
     if (createdAccountId) {
