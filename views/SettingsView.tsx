@@ -78,6 +78,20 @@ const SettingsView = () => {
       ]
     },
     {
+      title: 'Accounting',
+      items: [
+        {
+          id: 'accounts',
+          label: 'Chart of Accounts',
+          description: 'Create and edit ledger accounts used on the Summary report',
+          icon: FileText,
+          path: '/accounts',
+          color: 'text-slate-700',
+          bgColor: 'bg-slate-50'
+        },
+      ]
+    },
+    {
       title: 'Tax Configuration',
       items: [
         { 

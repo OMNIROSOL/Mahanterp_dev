@@ -26,6 +26,8 @@ import {
   listReceiptAllocations,
   listPaymentAllocations,
   ensureAllocationTables,
+  customersMoneyPositions,
+  suppliersMoneyPositions,
 } from './ledger';
 
 const app = express();
@@ -809,23 +811,16 @@ app.get('/api/customers', async (req, res) => {
     const customers = await prisma.customer.findMany({
       orderBy: { createdAt: 'desc' }
     });
-
-    const [invoices, receipts] = await Promise.all([
-      prisma.invoice.findMany({ select: { customerId: true, grandTotal: true } }),
-      prisma.receipt.findMany({ select: { paidByContact: true, amount: true } })
-    ]);
+    const positions = await customersMoneyPositions(prisma, customers);
     const customersWithBalance = customers.map(customer => {
-      const customerInvoices = invoices.filter(i => i.customerId === customer.id);
-      const customerReceipts = receipts.filter(r => r.paidByContact === customer.name);
-
-      const totalInvoiced = customerInvoices.reduce((sum, i) => sum + Number(i.grandTotal || 0), 0);
-      const totalPaid = customerReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-      const balance = totalInvoiced - totalPaid;
-
+      const pos = positions[customer.id] || { debit: 0, advance: 0, balance: 0 };
       return {
         ...customer,
-        balance,
-        status: customer.inactive ? 'Inactive' : (balance <= 0 ? 'Paid' : 'Unpaid')
+        debit: pos.debit,
+        advance: pos.advance,
+        accountsReceivable: pos.debit,
+        balance: pos.balance,
+        status: customer.inactive ? 'Inactive' : (pos.balance <= 0 ? 'Paid' : 'Unpaid')
       };
     });
 
@@ -844,22 +839,47 @@ app.get('/api/customers/:id', async (req, res) => {
     });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const [invoices, receipts] = await Promise.all([
-      prisma.invoice.findMany({ where: { customerId: id }, select: { grandTotal: true } }),
-      prisma.receipt.findMany({ where: { paidByContact: customer.name }, select: { amount: true } })
-    ]);
-
-    const totalInvoiced = invoices.reduce((sum, i) => sum + Number(i.grandTotal || 0), 0);
-    const totalPaid = receipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const balance = totalInvoiced - totalPaid;
+    const pos = await customersMoneyPositions(prisma, [customer]);
+    const money = pos[customer.id] || { debit: 0, advance: 0, balance: 0 };
 
     res.json({
       ...customer,
-      balance,
-      status: customer.inactive ? 'Inactive' : (balance <= 0 ? 'Paid' : 'Unpaid')
+      debit: money.debit,
+      advance: money.advance,
+      accountsReceivable: money.debit,
+      balance: money.balance,
+      status: customer.inactive ? 'Inactive' : (money.balance <= 0 ? 'Paid' : 'Unpaid')
     });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/customers/:id/invoices', async (req, res) => {
+  try {
+    const invoices = await prisma.invoice.findMany({
+      where: { customerId: req.params.id },
+      include: { customer: true },
+      orderBy: [{ issueDate: 'asc' }, { createdAt: 'asc' }]
+    });
+    res.json(invoices.map((inv) => {
+      const grand = Number(inv.grandTotal || 0);
+      const due = Number(inv.balanceDue ?? grand);
+      return {
+        id: inv.id,
+        reference: inv.reference,
+        issueDate: inv.issueDate,
+        dueDate: inv.dueDate,
+        grandTotal: grand,
+        balanceDue: due,
+        status: inv.status,
+        currency: inv.currency || 'ZMW',
+        customerId: inv.customerId,
+        customerName: inv.customer?.name || ''
+      };
+    }));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2106,7 +2126,9 @@ app.get('/api/suppliers', async (req, res) => {
       },
       orderBy: { created_at: 'desc' }
     });
+    const positions = await suppliersMoneyPositions(prisma, suppliers);
     const suppliersWithCounts = suppliers.map(supplier => {
+      const pos = positions[supplier.id] || { debit: 0, advance: 0, balance: 0 };
       const activeEnquiries = (supplier.purchaseEnquiries || []).filter((q: any) => {
         const status = (q.status || '').toLowerCase();
         return status !== 'accepted' && status !== 'rejected';
@@ -2117,13 +2139,6 @@ app.get('/api/suppliers', async (req, res) => {
         return status !== 'invoiced' && status !== 'rejected' && status !== 'closed';
       }).length;
 
-      const balance = (supplier.invoices || []).reduce((sum: number, inv: any) => {
-        if (inv.status !== 'Paid') {
-          return sum + (parseFloat(inv.grand_total || '0') || 0);
-        }
-        return sum;
-      }, 0);
-
       const grnsCount = (supplier.goodsReceivedNotes || []).length;
       const piGrnsCount = (supplier.invoices || []).filter((inv: any) => {
         const opts = inv.docOptions as any;
@@ -2132,13 +2147,16 @@ app.get('/api/suppliers', async (req, res) => {
 
       return {
         ...supplier,
-        balance,
+        debit: pos.debit,
+        advance: pos.advance,
+        accountsPayable: pos.debit,
+        balance: pos.balance,
         purchaseEnquiries: activeEnquiries,
         purchaseOrders: activeOrders,
         purchaseInvoices: (supplier.invoices || []).length,
         goodsReceipts: grnsCount + piGrnsCount,
         debitNotes: 0, // Debit Notes model is currently missing from schema
-        status: supplier.inactive ? 'Inactive' : (balance < 0 ? 'Overpaid' : (balance === 0 ? 'Paid' : 'Unpaid'))
+        status: supplier.inactive ? 'Inactive' : (pos.balance < 0 ? 'Overpaid' : (pos.balance === 0 ? 'Paid' : 'Unpaid'))
       };
     });
     res.json(suppliersWithCounts);
@@ -2157,10 +2175,50 @@ app.get('/api/suppliers/:id', async (req, res) => {
     if (!supplier) {
       return res.status(404).json({ error: 'Supplier not found' });
     }
+    const pos = await suppliersMoneyPositions(prisma, [supplier]);
+    const money = pos[supplier.id] || { debit: 0, advance: 0, balance: 0 };
     res.json({
       ...supplier,
-      status: supplier.inactive ? 'Inactive' : supplier.status
+      debit: money.debit,
+      advance: money.advance,
+      accountsPayable: money.debit,
+      balance: money.balance,
+      status: supplier.inactive ? 'Inactive' : (money.balance < 0 ? 'Overpaid' : (money.balance === 0 ? 'Paid' : 'Unpaid'))
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/suppliers/:id/invoices', async (req, res) => {
+  try {
+    const invs = await prisma.invoices.findMany({
+      where: { supplier_id: req.params.id },
+      include: { suppliers: true },
+      orderBy: { created_at: 'asc' }
+    });
+    const allocs: any[] = await listPaymentAllocations(prisma);
+    const paidMap: Record<string, number> = {};
+    for (const a of allocs) {
+      paidMap[String(a.invoiceId)] = Number(a.amount || 0);
+    }
+    res.json(invs.map((inv) => {
+      const grand = Number(inv.grand_total || 0);
+      const paid = paidMap[inv.id] || 0;
+      const due = Math.max(0, Math.round((grand - paid) * 100) / 100);
+      return {
+        id: inv.id,
+        reference: inv.reference,
+        issueDate: inv.created_at,
+        dueDate: inv.due_date,
+        grandTotal: grand,
+        balanceDue: due,
+        status: inv.status,
+        currency: (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+        supplierId: inv.supplier_id,
+        supplierName: inv.suppliers?.name || ''
+      };
+    }));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2505,6 +2563,29 @@ app.post('/api/ledger/backfill', async (_req, res) => {
   try {
     const result = await backfillUnpostedDocuments(prisma);
     res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/accounting-nav-counts', async (_req, res) => {
+  const safeCount = async (fn: () => Promise<number>) => {
+    try {
+      return await fn();
+    } catch {
+      return 0;
+    }
+  };
+
+  try {
+    const [bankAccounts, receipts, payments, transfers, expenseClaims] = await Promise.all([
+      safeCount(() => prisma.chartOfAccount.count({ where: { isPaymentAccount: true } })),
+      safeCount(() => prisma.receipt.count()),
+      safeCount(() => prisma.payment.count()),
+      safeCount(() => prisma.interAccountTransfer.count()),
+      safeCount(() => prisma.expenseClaim.count()),
+    ]);
+    res.json({ bankAccounts, receipts, payments, transfers, expenseClaims });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

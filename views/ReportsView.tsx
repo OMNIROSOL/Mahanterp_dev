@@ -126,18 +126,11 @@ const ReportsView: React.FC = () => {
       icon: Wallet,
       reports: [
         {
-          title: "Trial Balance",
-          description: "Debit and credit totals for every ledger account. Totals must match.",
+          title: "Summary",
+          description: "Balance sheet and profit and loss from your chart of accounts.",
           icon: Wallet,
-          path: "/trial-balance",
+          path: "/summary",
           color: "text-indigo-600"
-        },
-        {
-          title: "Financial Overview",
-          description: "Summary of chart of accounts, bank balances, and financial health.",
-          icon: Wallet,
-          path: "/accounts",
-          color: "text-purple-600"
         },
         {
           title: "Unrealized Foreign Exchange Gains (Losses)",

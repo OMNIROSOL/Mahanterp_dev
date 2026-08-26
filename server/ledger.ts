@@ -29,6 +29,16 @@ export async function ensureAllocationTables(db: any) {
         created_at TIMESTAMPTZ DEFAULT now()
       )
     `);
+    await db.$executeRawUnsafe(`ALTER TABLE finance.payment_allocations ADD COLUMN IF NOT EXISTS invoice_id UUID`);
+    await db.$executeRawUnsafe(`ALTER TABLE finance.payment_allocations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()`);
+    await db.$executeRawUnsafe(`
+      UPDATE finance.payment_allocations
+      SET invoice_id = purchase_invoice_id
+      WHERE invoice_id IS NULL AND purchase_invoice_id IS NOT NULL
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE finance.payment_allocations DROP CONSTRAINT IF EXISTS payment_allocations_payment_id_fkey
+    `).catch(() => null);
     allocationTablesReady = true;
   } catch (err) {
     console.error('[ledger] could not ensure allocation tables', err);
@@ -77,7 +87,7 @@ export type JournalLine = {
   credit?: number;
 };
 
-export type ControlKey = 'AR' | 'AP' | 'SALES' | 'INVENTORY' | 'SUSPENSE' | 'EXPENSE_CLAIMS';
+export type ControlKey = 'AR' | 'AP' | 'SALES' | 'INVENTORY' | 'SUSPENSE' | 'EXPENSE_CLAIMS' | 'CUSTOMER_ADVANCES' | 'SUPPLIER_PREPAYMENTS';
 
 const CONTROL: Record<ControlKey, { names: string[]; code: string; type: string; payment?: boolean }> = {
   AR: { names: ['Accounts Receivable', 'Trade Receivables'], code: '1100', type: 'Asset' },
@@ -86,11 +96,97 @@ const CONTROL: Record<ControlKey, { names: string[]; code: string; type: string;
   INVENTORY: { names: ['Inventory', 'Inventory on hand', 'Inventory on Hand'], code: '1200', type: 'Asset' },
   SUSPENSE: { names: ['Suspense'], code: '1900', type: 'Asset' },
   EXPENSE_CLAIMS: { names: ['Expense Claims Payable'], code: 'LIAB-EXP-CLAIMS', type: 'Liability' },
+  CUSTOMER_ADVANCES: { names: ['Customer advances', 'Customer Advances', 'Customer deposits'], code: '2200', type: 'Liability' },
+  SUPPLIER_PREPAYMENTS: { names: ['Supplier prepayments', 'Prepaid to suppliers'], code: '1300', type: 'Asset' },
 };
 
 export function signedBalance(accountType: string, debit: number, credit: number) {
   if (['Asset', 'Expense'].includes(accountType)) return round2(debit - credit);
   return round2(credit - debit);
+}
+
+export async function customersMoneyPositions(db: any, customers: { id: string; name: string }[]) {
+  await ensureAllocationTables(db);
+  const [invoices, receipts, allocRows] = await Promise.all([
+    db.invoice.findMany({ select: { customerId: true, balanceDue: true, grandTotal: true } }),
+    db.receipt.findMany({ select: { id: true, paidByContact: true, amount: true } }),
+    db.$queryRawUnsafe(`SELECT receipt_id AS "receiptId", amount FROM sales.receipt_allocations`).catch(() => []),
+  ]);
+
+  const allocatedByReceipt: Record<string, number> = {};
+  for (const row of allocRows || []) {
+    const id = String(row.receiptId);
+    allocatedByReceipt[id] = round2((allocatedByReceipt[id] || 0) + Number(row.amount || 0));
+  }
+
+  const debitByCustomer: Record<string, number> = {};
+  for (const invoice of invoices || []) {
+    const due = Math.max(0, Number(invoice.balanceDue ?? invoice.grandTotal ?? 0));
+    debitByCustomer[invoice.customerId] = round2((debitByCustomer[invoice.customerId] || 0) + due);
+  }
+
+  const byId: Record<string, { debit: number; advance: number; balance: number }> = {};
+  for (const customer of customers) {
+    const debit = debitByCustomer[customer.id] || 0;
+    const theirs = (receipts || []).filter((r: any) => r.paidByContact === customer.name);
+    const received = theirs.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+    const allocated = theirs.reduce((sum: number, r: any) => sum + (allocatedByReceipt[r.id] || 0), 0);
+    const advance = round2(Math.max(0, received - allocated));
+    byId[customer.id] = { debit, advance, balance: round2(debit - advance) };
+  }
+  return byId;
+}
+
+export async function customerMoneyPosition(db: any, customer: { id: string; name: string }) {
+  const map = await customersMoneyPositions(db, [customer]);
+  return map[customer.id] || { debit: 0, advance: 0, balance: 0 };
+}
+
+export async function suppliersMoneyPositions(db: any, suppliers: { id: string; name: string }[]) {
+  await ensureAllocationTables(db);
+  const [invoices, payments, allocByInvoice, allocByPayment] = await Promise.all([
+    db.invoices.findMany({ select: { id: true, supplier_id: true, grand_total: true } }),
+    db.payment.findMany({ select: { id: true, paidToContact: true, amount: true } }),
+    db.$queryRawUnsafe(
+      `SELECT invoice_id AS "invoiceId", COALESCE(SUM(amount), 0) AS amount
+       FROM finance.payment_allocations GROUP BY invoice_id`
+    ).catch(() => []),
+    db.$queryRawUnsafe(
+      `SELECT payment_id AS "paymentId", COALESCE(SUM(amount), 0) AS amount
+       FROM finance.payment_allocations GROUP BY payment_id`
+    ).catch(() => []),
+  ]);
+
+  const paidByInvoice: Record<string, number> = {};
+  for (const row of allocByInvoice || []) {
+    paidByInvoice[String(row.invoiceId)] = Number(row.amount || 0);
+  }
+  const allocatedByPayment: Record<string, number> = {};
+  for (const row of allocByPayment || []) {
+    allocatedByPayment[String(row.paymentId)] = Number(row.amount || 0);
+  }
+
+  const debitBySupplier: Record<string, number> = {};
+  for (const invoice of invoices || []) {
+    const due = Math.max(0, Number(invoice.grand_total || 0) - (paidByInvoice[invoice.id] || 0));
+    debitBySupplier[invoice.supplier_id] = round2((debitBySupplier[invoice.supplier_id] || 0) + due);
+  }
+
+  const byId: Record<string, { debit: number; advance: number; balance: number }> = {};
+  for (const supplier of suppliers) {
+    const debit = debitBySupplier[supplier.id] || 0;
+    const theirs = (payments || []).filter((p: any) => p.paidToContact === supplier.name);
+    const paidOut = theirs.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    const allocated = theirs.reduce((sum: number, p: any) => sum + (allocatedByPayment[p.id] || 0), 0);
+    const advance = round2(Math.max(0, paidOut - allocated));
+    byId[supplier.id] = { debit, advance, balance: round2(debit - advance) };
+  }
+  return byId;
+}
+
+export async function supplierMoneyPosition(db: any, supplier: { id: string; name: string }) {
+  const map = await suppliersMoneyPositions(db, [supplier]);
+  return map[supplier.id] || { debit: 0, advance: 0, balance: 0 };
 }
 
 export async function getControlAccount(db: any, key: ControlKey) {
@@ -213,14 +309,54 @@ export async function postSalesInvoice(db: any, invoice: any) {
   }
   const ar = await getControlAccount(db, 'AR');
   const sales = await getControlAccount(db, 'SALES');
+  const lines: JournalLine[] = [
+    { accountId: ar.id, debit: amount },
+    { accountId: sales.id, credit: amount },
+  ];
+
+  let customer = invoice.customer;
+  if (!customer && invoice.customerId) {
+    customer = await db.customer.findUnique({ where: { id: invoice.customerId } }).catch(() => null);
+  }
+
+  let appliedAdvance = 0;
+  const existingAllocs = invoice.id ? await listReceiptAllocations(db, undefined, invoice.id) : [];
+  if ((!existingAllocs || !existingAllocs.length) && customer?.name && invoice.id) {
+    const receipts = await db.receipt.findMany({
+      where: { paidByContact: customer.name },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+    let remaining = amount;
+    for (const receipt of receipts) {
+      if (remaining <= 0.01) break;
+      const allocs = await listReceiptAllocations(db, receipt.id);
+      const already = allocs.reduce((sum: number, a: any) => sum + Number(a.amount || 0), 0);
+      const free = round2(Number(receipt.amount || 0) - already);
+      if (free <= 0.01) continue;
+      const take = Math.min(free, remaining);
+      await applyReceiptAllocations(db, receipt.id, [{ invoiceId: invoice.id, amount: take }]);
+      remaining = round2(remaining - take);
+      appliedAdvance = round2(appliedAdvance + take);
+    }
+    if (appliedAdvance > 0.01) {
+      const advances = await getControlAccount(db, 'CUSTOMER_ADVANCES');
+      lines.push({ accountId: advances.id, debit: appliedAdvance });
+      lines.push({ accountId: ar.id, credit: appliedAdvance });
+      await db.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          balanceDue: round2(amount - appliedAdvance),
+          status: invoiceStatus(amount, round2(amount - appliedAdvance)),
+        },
+      });
+    }
+  }
+
   await postJournal(db, {
     sourceDocumentId: invoice.id,
     transactionType: `Sales Invoice ${invoice.reference || ''}`.trim(),
     date: invoice.issueDate || invoice.createdAt || new Date(),
-    lines: [
-      { accountId: ar.id, debit: amount },
-      { accountId: sales.id, credit: amount },
-    ],
+    lines,
   });
 }
 
@@ -248,6 +384,38 @@ export async function postPurchaseInvoice(db: any, invoice: any) {
   const ap = await getControlAccount(db, 'AP');
   const creditAmt = debitTotal || amount;
   lines.push({ accountId: ap.id, credit: creditAmt });
+
+  let supplier = invoice.suppliers;
+  if (!supplier && invoice.supplier_id) {
+    supplier = await db.suppliers.findUnique({ where: { id: invoice.supplier_id } }).catch(() => null);
+  }
+
+  let appliedAdvance = 0;
+  const existingPaid = invoice.id ? await sumPaymentAllocations(db, invoice.id) : 0;
+  if (existingPaid <= 0.01 && supplier?.name && invoice.id) {
+    const payments = await db.payment.findMany({
+      where: { paidToContact: supplier.name },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+    let remaining = creditAmt;
+    for (const payment of payments) {
+      if (remaining <= 0.01) break;
+      const allocs = await listPaymentAllocations(db, payment.id);
+      const already = allocs.reduce((sum: number, a: any) => sum + Number(a.amount || 0), 0);
+      const free = round2(Number(payment.amount || 0) - already);
+      if (free <= 0.01) continue;
+      const take = Math.min(free, remaining);
+      await applyPaymentAllocations(db, payment.id, [{ invoiceId: invoice.id, amount: take }]);
+      remaining = round2(remaining - take);
+      appliedAdvance = round2(appliedAdvance + take);
+    }
+    if (appliedAdvance > 0.01) {
+      const prepayments = await getControlAccount(db, 'SUPPLIER_PREPAYMENTS');
+      lines.push({ accountId: ap.id, debit: appliedAdvance });
+      lines.push({ accountId: prepayments.id, credit: appliedAdvance });
+    }
+  }
+
   await postJournal(db, {
     sourceDocumentId: invoice.id,
     transactionType: `Purchase Invoice ${invoice.reference || ''}`.trim(),
@@ -364,7 +532,7 @@ export async function postReceipt(db: any, receipt: any, allocations?: { invoice
   await reverseReceiptAllocations(db, receipt.id);
   let toApply = allocations;
   if (!toApply || !toApply.length) {
-    toApply = await autoAllocateSalesInvoices(db, receipt.paidByContact, arCredit || amount);
+    toApply = await autoAllocateSalesInvoices(db, receipt.paidByContact, arCredit);
   }
   await applyReceiptAllocations(db, receipt.id, toApply);
 }
@@ -490,7 +658,7 @@ export async function postPayment(db: any, payment: any, allocations?: { invoice
   await reversePaymentAllocations(db, payment.id);
   let toApply = allocations;
   if (!toApply || !toApply.length) {
-    toApply = await autoAllocatePurchaseInvoices(db, payment.paidToContact, apDebit || amount);
+    toApply = await autoAllocatePurchaseInvoices(db, payment.paidToContact, apDebit);
   }
   await applyPaymentAllocations(db, payment.id, toApply);
 }
