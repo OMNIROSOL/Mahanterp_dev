@@ -510,6 +510,7 @@ model PurchaseOrder {
   sourceEnquiryId    String?             @map("source_enquiry_id") @db.Uuid
   createdAt          DateTime?           @default(now()) @map("created_at") @db.Timestamptz(6)
   docOptions         Json?               @default("{}") @map("doc_options")
+  vendorConfirmed    Boolean?            @default(false) @map("vendor_confirmed")
   items              PurchaseOrderItem[]
   sourceEnquiry      PurchaseEnquiry?    @relation(fields: [sourceEnquiryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   supplier           suppliers           @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)

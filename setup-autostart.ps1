@@ -5,8 +5,8 @@ param(
 $shortcutName = "ERP_Start.lnk"
 $startupFolder = [Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupFolder $shortcutName
-$targetPath = "d:\erp\start-erp.bat"
-$workingDirectory = "d:\erp"
+$targetPath = "c:\MAHANTERP\start-production.bat"
+$workingDirectory = "c:\MAHANTERP"
 
 if ($Uninstall) {
     Write-Host "Checking for existing auto-start shortcut..." -ForegroundColor Cyan
@@ -29,7 +29,7 @@ Write-Host "Configuring ERP application auto-start..." -ForegroundColor Cyan
 
 # 1. Verify target file exists
 if (-not (Test-Path $targetPath)) {
-    Write-Error "Target startup script not found at '$targetPath'. Please make sure the ERP codebase is in 'd:\erp'."
+    Write-Error "Target startup script not found at '$targetPath'. Please make sure the ERP codebase is in 'c:\MAHANTERP'."
     exit 1
 }
 

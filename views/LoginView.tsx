@@ -26,7 +26,15 @@ const LoginView = () => {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      let data: any = {};
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        throw new Error(response.status === 502 || response.status === 503 || response.status === 504
+          ? 'Backend server is not responding (502 Bad Gateway). Please ensure the backend is running.'
+          : `Server returned an unexpected response (${response.status})`);
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Login failed');

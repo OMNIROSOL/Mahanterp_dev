@@ -23,7 +23,9 @@ const EditSupplierColumnsView = () => {
             { id: 'debitNotes', label: 'Debit Notes', visible: false },
             { id: 'goodsReceipts', label: 'Goods Receipts', visible: true },
             { id: 'qtyToReceive', label: 'Qty to receive', visible: true },
-            { id: 'balance', label: 'Accounts payable', visible: true },
+            { id: 'debit', label: 'Debit money', visible: true },
+            { id: 'advance', label: 'Advance money', visible: true },
+            { id: 'balance', label: 'Net outstanding', visible: true },
             { id: 'withholdingTax', label: 'Withholding tax payable', visible: false },
             { id: 'status', label: 'Status', visible: true },
             { id: 'timestamp', label: 'Timestamp', visible: false }

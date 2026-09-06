@@ -55,7 +55,7 @@ const EditBankAccountColumnsView = () => {
             {/* Breadcrumb Header */}
             <div className="max-w-2xl mx-auto mb-10">
                 <div className="flex items-center space-x-2 text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-4">
-                    <span className="cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => navigate('/account')}>Bank Accounts</span>
+                    <span className="cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => navigate('/account')}>Bank and Cash Accounts</span>
                     <ChevronRight size={10} className="opacity-50" />
                     <span className="text-slate-400">Column Configuration</span>
                 </div>

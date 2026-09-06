@@ -36,6 +36,7 @@ export const apiService = {
   // Master Data
   getCustomers: () => api.get('/customers').then(res => res.data),
   getCustomer: (id: string) => api.get(`/customers/${id}`).then(res => res.data),
+  getCustomerInvoices: (id: string) => api.get(`/customers/${id}/invoices`).then(res => res.data),
   getCustomerTransactions: (id: string) => api.get(`/customers/${id}/transactions`).then(res => res.data),
   createCustomer: (data: any) => api.post('/customers', data).then(res => res.data),
   updateCustomer: (id: string, data: any) => api.put(`/customers/${id}`, data).then(res => res.data),
@@ -67,6 +68,7 @@ export const apiService = {
 
   getAccounts: () => api.get('/accounts').then(res => res.data),
   getSummary: () => api.get('/summary').then(res => res.data),
+  getAccountingNavCounts: () => api.get('/accounting-nav-counts').then(res => res.data),
   getAccount: (id: string) => api.get(`/accounts/${id}`).then(res => res.data),
   getAccountLedger: (id: string, params?: { from?: string; to?: string }) =>
     api.get(`/accounts/${id}/ledger`, { params }).then(res => res.data),
@@ -160,6 +162,7 @@ export const apiService = {
   // Suppliers
   getSuppliers: () => api.get('/suppliers').then(res => res.data),
   getSupplier: (id: string) => api.get(`/suppliers/${id}`).then(res => res.data),
+  getSupplierInvoices: (id: string) => api.get(`/suppliers/${id}/invoices`).then(res => res.data),
   createSupplier: (data: any) => api.post('/suppliers', data).then(res => res.data),
   updateSupplier: (id: string, data: any) => api.put(`/suppliers/${id}`, data).then(res => res.data),
   deleteSupplier: (id: string) => api.delete(`/suppliers/${id}`).then(res => res.data),
@@ -218,11 +221,10 @@ export const apiService = {
 
     // Accounting & Finance
     { id: 'accounts', name: 'Chart of Accounts', category: 'Accounting & Finance' },
-    { id: 'trial-balance', name: 'Trial Balance', category: 'Accounting & Finance' },
-    { id: 'bank-accounts', name: 'Bank Accounts', category: 'Accounting & Finance' },
-    { id: 'receipts', name: 'Customer Receipts', category: 'Accounting & Finance' },
-    { id: 'payments', name: 'Supplier Payments', category: 'Accounting & Finance' },
-    { id: 'inter-account-transfers', name: 'Inter-Account Transfers', category: 'Accounting & Finance' },
+    { id: 'bank-accounts', name: 'Bank and Cash Accounts', category: 'Accounting & Finance' },
+    { id: 'receipts', name: 'Receipts', category: 'Accounting & Finance' },
+    { id: 'payments', name: 'Payments', category: 'Accounting & Finance' },
+    { id: 'inter-account-transfers', name: 'Inter Account Transfers', category: 'Accounting & Finance' },
     { id: 'expense-claims', name: 'Expense Claims', category: 'Accounting & Finance' },
 
     // Sales & CRM

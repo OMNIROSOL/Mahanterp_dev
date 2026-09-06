@@ -28,7 +28,6 @@ import EditInvoiceColumnsView from './views/EditInvoiceColumnsView';
 import SalesQuotesView from './views/SalesQuotesView';
 import AccountsView from './views/AccountsView';
 import SummaryView from './views/SummaryView';
-import TrialBalanceView from './views/TrialBalanceView';
 import BankAccountsView from './views/BankAccountsView';
 import ViewBankAccountView from './views/ViewBankAccountView';
 import InvoicesView from './views/InvoicesView';
@@ -197,7 +196,6 @@ const App = () => {
           {/* Dashboard Routes */}
           <Route path="/" element={<SummaryView />} />
           <Route path="/summary" element={<SummaryView />} />
-          <Route path="/trial-balance" element={<TrialBalanceView />} />
           <Route path="/sales-dashboard" element={<SalesDashboard />} />
           <Route path="/reports" element={<ReportsView />} />
           <Route path="/reports/unrealized-fx" element={<UnrealizedFxGainsView />} />

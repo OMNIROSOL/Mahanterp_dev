@@ -58,7 +58,7 @@ const ViewBankAccountView = () => {
             <div className="bg-white px-4 py-2 border-b border-gray-200 flex items-center text-[11px] text-gray-500 space-x-1.5 select-none no-print">
                 <i className="fas fa-folder-open text-[#90a4ae]"></i>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
-                <Link to="/account" className="hover:text-[#2196f3]">Bank Accounts</Link>
+                <Link to="/account" className="hover:text-[#2196f3]">Bank and Cash Accounts</Link>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
                 <span className="text-gray-400">View</span>
             </div>

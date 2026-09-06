@@ -30,7 +30,9 @@ const EditCustomerColumnsView = () => {
             { id: 'tpin', label: 'TPIN', visible: true },
             { id: 'salesPerson', label: 'Sales Person', visible: true },
             { id: 'creditDays', label: 'Credit Days', visible: true },
-            { id: 'balance', label: 'Total Outstanding Balance', visible: true },
+            { id: 'debit', label: 'Debit money', visible: true },
+            { id: 'advance', label: 'Advance money', visible: true },
+            { id: 'balance', label: 'Net outstanding', visible: true },
             { id: 'timestamp', label: 'Timestamp', visible: false }
         ];
 

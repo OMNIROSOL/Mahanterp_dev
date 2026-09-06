@@ -9,7 +9,13 @@ import {
   ChevronDown,
   Package,
   FileSpreadsheet,
-  BarChart3
+  BarChart3,
+  Columns2,
+  Coins,
+  PlusSquare,
+  MinusSquare,
+  ArrowLeftRight,
+  Wallet
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { AppUser } from '../../types';
@@ -17,11 +23,18 @@ import { AppUser } from '../../types';
 // TODO: Replace with real auth service
 import apiService from '../../services/apiService';
 
-const TopMenu: React.FC<TopMenuProps> = () => {
+const TopMenu: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => apiService.getCurrentUser());
   const location = useLocation();
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
   const [roleDef, setRoleDef] = useState<any>(null);
+  const [navCounts, setNavCounts] = useState<{
+    bankAccounts?: number;
+    receipts?: number;
+    payments?: number;
+    transfers?: number;
+    expenseClaims?: number;
+  }>({});
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -66,6 +79,39 @@ const TopMenu: React.FC<TopMenuProps> = () => {
     return () => window.removeEventListener('roles_updated', fetchRoleDef);
   }, [currentUser]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadCounts = async () => {
+      try {
+        const data = await apiService.getAccountingNavCounts();
+        if (!cancelled) setNavCounts(data || {});
+      } catch {
+        try {
+          const [banks, receipts, payments, transfers, claims] = await Promise.all([
+            apiService.getBankAccounts(),
+            apiService.getReceipts(),
+            apiService.getPayments(),
+            apiService.getInterAccountTransfers(),
+            apiService.getExpenseClaims(),
+          ]);
+          if (!cancelled) {
+            setNavCounts({
+              bankAccounts: Array.isArray(banks) ? banks.length : 0,
+              receipts: Array.isArray(receipts) ? receipts.length : 0,
+              payments: Array.isArray(payments) ? payments.length : 0,
+              transfers: Array.isArray(transfers) ? transfers.length : 0,
+              expenseClaims: Array.isArray(claims) ? claims.length : 0,
+            });
+          }
+        } catch {
+          if (!cancelled) setNavCounts({});
+        }
+      }
+    };
+    loadCounts();
+    return () => { cancelled = true; };
+  }, [location.pathname]);
+
   const isAdmin = currentUser?.role === 'Admin';
   const isManager = currentUser?.role === 'Manager' || isAdmin;
 
@@ -86,14 +132,12 @@ const TopMenu: React.FC<TopMenuProps> = () => {
       path: '/summary',
       id: 'summary',
       submenu: [
-        { label: 'Summary', path: '/summary', id: 'summary' },
-        { label: 'Trial Balance', path: '/trial-balance', id: 'trial-balance' },
-        { label: 'Chart of Accounts', path: '/accounts', id: 'accounts' },
-        { label: 'Bank Accounts', path: '/account', id: 'bank-accounts' },
-        { label: 'Receipts', path: '/receipts', id: 'receipts' },
-        { label: 'Payments', path: '/payments', id: 'payments' },
-        { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers' },
-        { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims' },
+        { label: 'Summary', path: '/summary', id: 'summary', icon: Columns2 },
+        { label: 'Bank and Cash Accounts', path: '/account', id: 'bank-accounts', icon: Coins, countKey: 'bankAccounts' },
+        { label: 'Receipts', path: '/receipts', id: 'receipts', icon: PlusSquare, countKey: 'receipts' },
+        { label: 'Payments', path: '/payments', id: 'payments', icon: MinusSquare, countKey: 'payments' },
+        { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers', icon: ArrowLeftRight, countKey: 'transfers' },
+        { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims', icon: Wallet, countKey: 'expenseClaims' },
       ]
     },
     { label: 'Sales Dashboard', icon: BarChart3, path: '/sales-dashboard', id: 'dashboard' },
@@ -221,21 +265,33 @@ const TopMenu: React.FC<TopMenuProps> = () => {
             </NavLink>
             
             {item.submenu && hoveredMenu === item.id && (
-              <div className="absolute left-0 top-full mt-0 w-56 bg-white rounded-b-xl shadow-xl border border-slate-200 overflow-hidden py-2 z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className={cn(
+                "absolute left-0 top-full mt-0 bg-white rounded-b-xl shadow-xl border border-slate-200 overflow-hidden py-1 z-[100] animate-in fade-in slide-in-from-top-2 duration-200",
+                item.id === 'summary' ? "w-80" : "w-56"
+              )}>
                 {item.submenu.map((sub, sIdx) => {
                   const isSubActive = location.pathname === sub.path || location.pathname.startsWith(sub.path + '/');
+                  const SubIcon = (sub as any).icon;
+                  const countKey = (sub as any).countKey as keyof typeof navCounts | undefined;
+                  const count = countKey ? navCounts[countKey] : undefined;
                   return (
                     <NavLink
                       key={sIdx}
                       to={sub.path}
                       className={cn(
-                        "block px-5 py-2.5 text-sm transition-colors whitespace-normal",
+                        "flex items-center gap-3 px-4 py-2.5 text-sm transition-colors whitespace-nowrap",
                         isSubActive 
-                          ? "bg-primary/10 text-primary font-bold" 
-                          : "text-slate-700 hover:bg-slate-50 hover:text-primary"
+                          ? "bg-blue-50 text-blue-700 font-semibold" 
+                          : "text-blue-600 hover:bg-slate-50"
                       )}
                     >
-                      {sub.label}
+                      {SubIcon ? <SubIcon size={16} className="shrink-0 text-blue-500" /> : null}
+                      <span className="flex-1">{sub.label}</span>
+                      {count != null && (
+                        <span className="text-slate-400 text-[13px] tabular-nums">
+                          {Number(count).toLocaleString()}
+                        </span>
+                      )}
                     </NavLink>
                   );
                 })}

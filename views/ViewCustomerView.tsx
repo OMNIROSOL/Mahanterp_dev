@@ -320,12 +320,28 @@ const ViewCustomerView = () => {
                             Account Summary
                             <span className="text-[10px] text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">View Transactions →</span>
                         </h3>
-                        <div className="flex justify-between items-center">
-                            <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Total Outstanding Balance</span>
-                            <span className="font-black text-3xl text-slate-900 tracking-tighter">
-                                <span className="text-[14px] mr-3 text-slate-400 font-bold">{customer.currency?.split(' ')[0] || 'ZMW'}</span>
-                                {(Number(customer.balance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </span>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div>
+                                <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Debit money</span>
+                                <p className="font-black text-2xl text-indigo-700 tracking-tighter mt-2">
+                                    <span className="text-[14px] mr-2 text-slate-400">{customer.currency?.split(' ')[0] || 'ZMW'}</span>
+                                    {(Number(customer.debit ?? customer.accountsReceivable) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                            </div>
+                            <div>
+                                <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Advance money</span>
+                                <p className="font-black text-2xl text-amber-600 tracking-tighter mt-2">
+                                    <span className="text-[14px] mr-2 text-slate-400">{customer.currency?.split(' ')[0] || 'ZMW'}</span>
+                                    {(Number(customer.advance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                            </div>
+                            <div>
+                                <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Net outstanding</span>
+                                <p className="font-black text-2xl text-slate-900 tracking-tighter mt-2">
+                                    <span className="text-[14px] mr-2 text-slate-400">{customer.currency?.split(' ')[0] || 'ZMW'}</span>
+                                    {(Number(customer.balance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

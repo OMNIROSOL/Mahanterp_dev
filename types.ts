@@ -193,6 +193,8 @@ export interface Customer {
   division?: string;
   qtyToDeliver?: number;
   uninvoiced?: number;
+  debit?: number;
+  advance?: number;
   accountsReceivable?: number;
   status: 'Paid' | 'Unpaid';
   inactive?: boolean;
@@ -402,6 +404,8 @@ export interface Supplier {
   code: string;
   division?: string;
   accountsPayable?: number;
+  debit?: number;
+  advance?: number;
   status: 'Paid' | 'Unpaid' | 'Overdue';
   balance: number;
   email?: string;
