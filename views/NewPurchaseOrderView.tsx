@@ -37,8 +37,10 @@ import {
     ChevronUp,
     Hash,
     Briefcase,
-    Image as ImageIcon
+    Image as ImageIcon,
+    ArrowRight
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/shared/Tooltip";
@@ -485,10 +487,9 @@ const NewPurchaseOrderView = () => {
                                                 <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                                                     {options.columnLineNumber && <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">{index + 1}</td>}
                                                     <td className="px-4 py-4">
-                                                        <select
+                                                        <SearchableSelect
                                                             value={item.item}
-                                                            onChange={(e) => {
-                                                                const val = e.target.value;
+                                                            onChange={(val) => {
                                                                 const invItem = dbItems.find(it => it.itemName === val);
                                                                 setItems(prev => prev.map(i => i.id === item.id ? {
                                                                     ...i,
@@ -497,13 +498,11 @@ const NewPurchaseOrderView = () => {
                                                                     description: invItem ? val : i.description
                                                                 } : i));
                                                             }}
-                                                            className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] outline-none appearance-none cursor-pointer"
-                                                        >
-                                                            <option value="Select Item">Select Item</option>
-                                                            {dbItems.map(it => (
-                                                                <option key={it.id} value={it.itemName}>{it.itemName}</option>
-                                                            ))}
-                                                        </select>
+                                                            options={[
+                                                                { label: 'Select Item', value: 'Select Item' },
+                                                                ...dbItems.map(it => ({ label: it.itemName, value: it.itemName }))
+                                                            ]}
+                                                        />
                                                     </td>
                                                     <td className="px-4 py-4">
                                                         <input
@@ -626,7 +625,7 @@ const NewPurchaseOrderView = () => {
                                             </span>
                                         </div>
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Tax Component</span>
+                                            <span>Tax Component {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">{calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         {options.withholdingTax && (

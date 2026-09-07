@@ -23,7 +23,9 @@ import {
   Package,
   ArrowRightLeft,
   FileX,
-  ShieldCheck
+  ShieldCheck,
+  Shield,
+  Activity
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { AppUser } from '../../types';
@@ -139,22 +141,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
   };
 
   const menuItems = [
+    { label: 'Dashboard', icon: LayoutDashboard, path: '/', id: 'dashboard' },
     {
       label: 'Accounting',
-      icon: LayoutDashboard,
+      icon: Receipt,
       path: '/summary',
       id: 'summary',
       submenu: [
         { label: 'Summary', path: '/summary', id: 'summary' },
-        { label: 'Chart of Accounts', path: '/accounts', id: 'accounts' },
-        { label: 'Bank Accounts', path: '/account', id: 'bank-accounts' },
+        { label: 'Bank and Cash Accounts', path: '/account', id: 'bank-accounts' },
         { label: 'Receipts', path: '/receipts', id: 'receipts' },
         { label: 'Payments', path: '/payments', id: 'payments' },
         { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers' },
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims' },
       ]
     },
-    { label: 'Sales Dashboard', icon: BarChart3, path: '/sales-dashboard', id: 'dashboard' },
     {
       label: 'Master Data',
       icon: Database,
@@ -174,6 +175,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       path: '/sales-history',
       id: 'sales-invoices',
       submenu: [
+        { label: 'Sales Dashboard', path: '/sales-dashboard', id: 'sales-dashboard' },
         { label: 'Customers', path: '/customers', id: 'customers' },
         { label: 'Sales History', path: '/sales-history', id: 'sales-invoices' },
         { label: 'Sales Quotes', path: '/sales-quotes', id: 'sales-quotes' },
@@ -220,6 +222,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
     },
     { label: 'Approvals', icon: CheckCircle, path: '/approvals', id: 'approvals' },
     { label: 'Reports', icon: FileSpreadsheet, path: '/reports', id: 'reports' },
+    {
+      label: 'Admin',
+      icon: Shield,
+      path: '/admin/activity-log',
+      id: 'admin',
+      submenu: [
+        { label: 'Activity Log', path: '/admin/activity-log', id: 'admin-activity' },
+        { label: 'Database Backup', path: '/admin/backup', id: 'admin-backup' },
+      ]
+    },
     { label: 'Settings', icon: Settings, path: '/settings', id: 'user-permissions' },
   ];
 

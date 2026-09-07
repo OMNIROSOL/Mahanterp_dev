@@ -64,6 +64,7 @@ const NewAccountView = () => {
     const [code, setCode] = useState('');
     const [type, setType] = useState('Asset');
     const [description, setDescription] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -88,13 +89,15 @@ const NewAccountView = () => {
     }, [id]);
 
     const handleSave = async () => {
+        if (!name.trim() || isSaving) return;
         const accountData: Partial<Account> = {
-            name,
-            code,
+            name: name.trim(),
+            code: code.trim(),
             type: type as any,
             description
         };
 
+        setIsSaving(true);
         try {
             if (id) {
                 await apiService.updateAccount(id, accountData);
@@ -102,9 +105,12 @@ const NewAccountView = () => {
                 await apiService.createAccount(accountData);
             }
             navigate('/accounts');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to save account:', err);
-            alert('Failed to save account to database');
+            const message = err?.response?.data?.error || err?.message || 'Failed to save account to database';
+            alert(message);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -196,14 +202,14 @@ const NewAccountView = () => {
                     
                     <button
                         onClick={handleSave}
-                        disabled={!name}
+                        disabled={!name.trim() || isSaving}
                         className={cn(
                             "group relative flex items-center space-x-3 px-10 py-4 rounded-[20px] font-black text-[13px] uppercase tracking-[0.2em] transition-all shadow-xl active:scale-95 disabled:grayscale disabled:opacity-50",
-                            name ? "bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                            name.trim() && !isSaving ? "bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"
                         )}
                     >
                         <Save size={18} />
-                        <span>{id ? 'Update Account' : 'Create Account'}</span>
+                        <span>{isSaving ? 'Saving...' : (id ? 'Update Account' : 'Create Account')}</span>
                     </button>
                 </div>
             </div>

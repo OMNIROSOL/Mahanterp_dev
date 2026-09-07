@@ -589,7 +589,7 @@ const ViewSalesQuoteView = () => {
                                     <span className="font-semibold">{totals.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-gray-500">
-                                    <span className="text-[11px] font-bold uppercase tracking-widest">Tax Component</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-widest">Tax Component {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                     <span className="font-semibold">{totals.tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                 </div>
                                 {quote.docOptions?.withholdingTax && (

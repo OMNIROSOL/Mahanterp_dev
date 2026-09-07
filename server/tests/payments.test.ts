@@ -14,6 +14,8 @@ describe('Payments API', () => {
         where: { id: createdPaymentId }
       });
       if (existing) {
+        await prisma.ledgerEntry.deleteMany({ where: { source_document_id: createdPaymentId } });
+        await prisma.$executeRawUnsafe(`DELETE FROM finance.payment_allocations WHERE payment_id = $1::uuid`, createdPaymentId).catch(() => null);
         await prisma.payment.delete({
           where: { id: createdPaymentId }
         });

@@ -93,9 +93,10 @@ const NewBankAccountView = () => {
         try {
             await apiService.createBankAccount(newAccount);
             navigate('/account');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to create bank account:', err);
-            alert('Failed to create bank account in database');
+            const message = err?.response?.data?.error || err?.message || 'Failed to create bank account in database';
+            alert(message);
         }
     };
 
@@ -105,7 +106,7 @@ const NewBankAccountView = () => {
             <div className="flex justify-between items-center">
                 <div>
                     <div className="flex items-center space-x-2 text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">
-                        <span className="cursor-pointer hover:underline" onClick={() => navigate('/account')}>Bank Accounts</span>
+                        <span className="cursor-pointer hover:underline" onClick={() => navigate('/account')}>Bank and Cash Accounts</span>
                         <ChevronRight size={10} className="opacity-50" />
                         <span className="text-slate-400">Add New Account</span>
                     </div>

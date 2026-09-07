@@ -9,6 +9,8 @@ describe('Receipts API', () => {
   afterAll(async () => {
     // Cleanup the created test receipt
     if (createdReceiptId) {
+      await prisma.ledgerEntry.deleteMany({ where: { source_document_id: createdReceiptId } });
+      await prisma.$executeRawUnsafe(`DELETE FROM sales.receipt_allocations WHERE receipt_id = $1::uuid`, createdReceiptId).catch(() => null);
       await prisma.receipt.delete({
         where: { id: createdReceiptId }
       });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, X, ArrowRightLeft, Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import apiService from '../services/apiService';
 import { InventoryTransfer, InventoryLocation, InventoryItem } from '../types';
 
@@ -325,19 +326,18 @@ const NewInventoryTransferView = () => {
                   </div>
                   <div className="md:col-span-7 space-y-2">
                     <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Inventory Item</label>
-                    <select
+                    <SearchableSelect
                       value={item.inventoryItem}
-                      onChange={(e) => handleItemChange(index, 'inventoryItem', e.target.value)}
+                      onChange={(val) => handleItemChange(index, 'inventoryItem', val)}
+                      options={[
+                        { label: 'Select Item...', value: '' },
+                        ...availableItems.map(mi => ({
+                          label: `${mi.itemCode} - ${mi.itemName} (${mi.qtyOnHand} available)`,
+                          value: `${mi.itemCode} - ${mi.itemName}`
+                        }))
+                      ]}
                       className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none text-sm font-medium"
-                      required
-                    >
-                      <option value="">Select Item...</option>
-                      {availableItems.map(mi => (
-                        <option key={mi.id} value={`${mi.itemCode} - ${mi.itemName}`}>
-                          {mi.itemCode} - {mi.itemName} ({mi.qtyOnHand} available)
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                   <div className="md:col-span-3 space-y-2">
                     <label className={`text-[9px] font-black uppercase tracking-widest ${hasError ? 'text-rose-500' : 'text-gray-400'}`}>Quantity</label>

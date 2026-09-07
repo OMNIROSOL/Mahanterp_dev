@@ -36,6 +36,7 @@ export const apiService = {
   // Master Data
   getCustomers: () => api.get('/customers').then(res => res.data),
   getCustomer: (id: string) => api.get(`/customers/${id}`).then(res => res.data),
+  getCustomerInvoices: (id: string) => api.get(`/customers/${id}/invoices`).then(res => res.data),
   getCustomerTransactions: (id: string) => api.get(`/customers/${id}/transactions`).then(res => res.data),
   createCustomer: (data: any) => api.post('/customers', data).then(res => res.data),
   updateCustomer: (id: string, data: any) => api.put(`/customers/${id}`, data).then(res => res.data),
@@ -67,7 +68,13 @@ export const apiService = {
 
   getAccounts: () => api.get('/accounts').then(res => res.data),
   getSummary: () => api.get('/summary').then(res => res.data),
+  getAccountingNavCounts: () => api.get('/accounting-nav-counts').then(res => res.data),
   getAccount: (id: string) => api.get(`/accounts/${id}`).then(res => res.data),
+  getAccountLedger: (id: string, params?: { from?: string; to?: string }) =>
+    api.get(`/accounts/${id}/ledger`, { params }).then(res => res.data),
+  getTrialBalance: (params?: { from?: string; to?: string }) =>
+    api.get('/trial-balance', { params }).then(res => res.data),
+  backfillLedger: () => api.post('/ledger/backfill').then(res => res.data),
   createAccount: (data: any) => api.post('/accounts', data).then(res => res.data),
   updateAccount: (id: string, data: any) => api.put(`/accounts/${id}`, data).then(res => res.data),
 
@@ -88,6 +95,7 @@ export const apiService = {
 
   getInvoices: () => api.get('/invoices').then(res => res.data),
   getInvoice: (id: string) => api.get(`/invoices/${id}`).then(res => res.data),
+  getInvoiceTransactions: (id: string) => api.get(`/invoices/${id}/transactions`).then(res => res.data),
   createInvoice: (data: any) => api.post('/invoices', data).then(res => res.data),
   updateInvoice: (id: string, data: any) => api.put(`/invoices/${id}`, data).then(res => res.data),
   updateInvoiceStatus: (id: string, status: string) => api.patch(`/invoices/${id}`, { status }).then(res => res.data),
@@ -154,6 +162,7 @@ export const apiService = {
   // Suppliers
   getSuppliers: () => api.get('/suppliers').then(res => res.data),
   getSupplier: (id: string) => api.get(`/suppliers/${id}`).then(res => res.data),
+  getSupplierInvoices: (id: string) => api.get(`/suppliers/${id}/invoices`).then(res => res.data),
   createSupplier: (data: any) => api.post('/suppliers', data).then(res => res.data),
   updateSupplier: (id: string, data: any) => api.put(`/suppliers/${id}`, data).then(res => res.data),
   deleteSupplier: (id: string) => api.delete(`/suppliers/${id}`).then(res => res.data),
@@ -212,11 +221,12 @@ export const apiService = {
 
     // Accounting & Finance
     { id: 'accounts', name: 'Chart of Accounts', category: 'Accounting & Finance' },
-    { id: 'bank-accounts', name: 'Bank Accounts', category: 'Accounting & Finance' },
-    { id: 'receipts', name: 'Customer Receipts', category: 'Accounting & Finance' },
-    { id: 'payments', name: 'Supplier Payments', category: 'Accounting & Finance' },
-    { id: 'inter-account-transfers', name: 'Inter-Account Transfers', category: 'Accounting & Finance' },
+    { id: 'bank-accounts', name: 'Bank and Cash Accounts', category: 'Accounting & Finance' },
+    { id: 'receipts', name: 'Receipts', category: 'Accounting & Finance' },
+    { id: 'payments', name: 'Payments', category: 'Accounting & Finance' },
+    { id: 'inter-account-transfers', name: 'Inter Account Transfers', category: 'Accounting & Finance' },
     { id: 'expense-claims', name: 'Expense Claims', category: 'Accounting & Finance' },
+    { id: 'expense-claim-payers', name: 'Expense Claim Payers', category: 'Accounting & Finance' },
 
     // Sales & CRM
     { id: 'customers', name: 'Customers Directory', category: 'Sales & CRM' },
@@ -225,6 +235,7 @@ export const apiService = {
     { id: 'delivery-notes', name: 'Delivery Notes', category: 'Sales & CRM' },
     { id: 'sales-invoices', name: 'Sales Invoices', category: 'Sales & CRM' },
     { id: 'credit-notes', name: 'Credit Notes', category: 'Sales & CRM' },
+    { id: 'sales-history', name: 'Sales History', category: 'Sales & CRM' },
 
     // Purchasing & Procurement
     { id: 'suppliers', name: 'Suppliers Directory', category: 'Procurement & Purchasing' },
@@ -241,6 +252,7 @@ export const apiService = {
     { id: 'consumption-dashboard', name: 'Consumption Dashboard', category: 'Procurement & Purchasing' },
     { id: 'costing-report', name: 'Costing Sheet & Report', category: 'Procurement & Purchasing' },
     { id: 'purchase-planning', name: 'Purchase Planning', category: 'Procurement & Purchasing' },
+    { id: 'supplier-catalog', name: 'Supplier Catalog Setup', category: 'Procurement & Purchasing' },
 
     // Inventory Management
     { id: 'inventory-items', name: 'Inventory Items', category: 'Inventory Management' },
@@ -250,6 +262,8 @@ export const apiService = {
     { id: 'inventory-unit-costs', name: 'Inventory Unit Costs', category: 'Inventory Management' },
     { id: 'units', name: 'Units of Measure', category: 'Inventory Management' },
     { id: 'categories', name: 'Item Categories', category: 'Inventory Management' },
+    { id: 'income-items', name: 'Income Items', category: 'Inventory Management' },
+    { id: 'expense-items', name: 'Expense Items', category: 'Inventory Management' },
 
     // Approvals & Workflows
     { id: 'approvals', name: 'Approvals Center', category: 'Approvals & Workflows' },
@@ -263,7 +277,9 @@ export const apiService = {
     { id: 'tax-codes', name: 'Tax Codes & Rates', category: 'Settings & Master Data' },
     { id: 'withholding-tax', name: 'Withholding Tax Rates', category: 'Settings & Master Data' },
     { id: 'user-permissions', name: 'Users & Permissions', category: 'Settings & Master Data' },
-    { id: 'role-management', name: 'Role Management & Definitions', category: 'Settings & Master Data' }
+    { id: 'role-management', name: 'Role Management & Definitions', category: 'Settings & Master Data' },
+    { id: 'currencies', name: 'Currencies', category: 'Settings & Master Data' },
+    { id: 'exchange-rates', name: 'Exchange Rates', category: 'Settings & Master Data' }
   ]),
 
   // Users & Session

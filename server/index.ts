@@ -9,6 +9,26 @@ import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import procurementRouter from './procurement';
+import {
+  postSalesInvoice,
+  postPurchaseInvoice,
+  postReceipt,
+  postPayment,
+  postTransfer,
+  postExpenseClaim,
+  postCreditNote,
+  postDebitNote,
+  postInventoryWriteOff,
+  reverseJournal,
+  reversePaymentAllocations,
+  signedBalance,
+  backfillUnpostedDocuments,
+  listReceiptAllocations,
+  listPaymentAllocations,
+  ensureAllocationTables,
+  customersMoneyPositions,
+  suppliersMoneyPositions,
+} from './ledger';
 
 const app = express();
 console.log('Connecting to DB:', process.env.DATABASE_URL ? 'URL found' : 'URL MISSING');
@@ -31,7 +51,7 @@ pool.on('error', (err) => {
 
 const adapter = new PrismaPg(pool);
 export const prisma = new PrismaClient({ adapter });
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3005;
 
 const formatDate = (date: Date | null | undefined) => {
   if (!date) return '';
@@ -573,7 +593,7 @@ app.get('/api/test-patch-route', (req, res) => {
   res.json({ message: 'PATCH test route is reachable' });
 });
 
-app.get('/api/ping', (req, res) => res.json({ pong: true }));
+app.get('/api/ping', (req, res) => res.json({ pong: "tax-codes-fixed" }));
 
 // Removed duplicate purchase-invoice routes
 app.get('/api/items/:id/locations', async (req, res) => {
@@ -791,23 +811,16 @@ app.get('/api/customers', async (req, res) => {
     const customers = await prisma.customer.findMany({
       orderBy: { createdAt: 'desc' }
     });
-
-    const [invoices, receipts] = await Promise.all([
-      prisma.invoice.findMany({ select: { customerId: true, grandTotal: true } }),
-      prisma.receipt.findMany({ select: { paidByContact: true, amount: true } })
-    ]);
+    const positions = await customersMoneyPositions(prisma, customers);
     const customersWithBalance = customers.map(customer => {
-      const customerInvoices = invoices.filter(i => i.customerId === customer.id);
-      const customerReceipts = receipts.filter(r => r.paidByContact === customer.name);
-
-      const totalInvoiced = customerInvoices.reduce((sum, i) => sum + Number(i.grandTotal || 0), 0);
-      const totalPaid = customerReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-      const balance = totalInvoiced - totalPaid;
-
+      const pos = positions[customer.id] || { debit: 0, advance: 0, balance: 0 };
       return {
         ...customer,
-        balance,
-        status: customer.inactive ? 'Inactive' : (balance <= 0 ? 'Paid' : 'Unpaid')
+        debit: pos.debit,
+        advance: pos.advance,
+        accountsReceivable: pos.debit,
+        balance: pos.balance,
+        status: customer.inactive ? 'Inactive' : (pos.balance <= 0 ? 'Paid' : 'Unpaid')
       };
     });
 
@@ -826,22 +839,47 @@ app.get('/api/customers/:id', async (req, res) => {
     });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const [invoices, receipts] = await Promise.all([
-      prisma.invoice.findMany({ where: { customerId: id }, select: { grandTotal: true } }),
-      prisma.receipt.findMany({ where: { paidByContact: customer.name }, select: { amount: true } })
-    ]);
-
-    const totalInvoiced = invoices.reduce((sum, i) => sum + Number(i.grandTotal || 0), 0);
-    const totalPaid = receipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const balance = totalInvoiced - totalPaid;
+    const pos = await customersMoneyPositions(prisma, [customer]);
+    const money = pos[customer.id] || { debit: 0, advance: 0, balance: 0 };
 
     res.json({
       ...customer,
-      balance,
-      status: customer.inactive ? 'Inactive' : (balance <= 0 ? 'Paid' : 'Unpaid')
+      debit: money.debit,
+      advance: money.advance,
+      accountsReceivable: money.debit,
+      balance: money.balance,
+      status: customer.inactive ? 'Inactive' : (money.balance <= 0 ? 'Paid' : 'Unpaid')
     });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/customers/:id/invoices', async (req, res) => {
+  try {
+    const invoices = await prisma.invoice.findMany({
+      where: { customerId: req.params.id },
+      include: { customer: true },
+      orderBy: [{ issueDate: 'asc' }, { createdAt: 'asc' }]
+    });
+    res.json(invoices.map((inv) => {
+      const grand = Number(inv.grandTotal || 0);
+      const due = Number(inv.balanceDue ?? grand);
+      return {
+        id: inv.id,
+        reference: inv.reference,
+        issueDate: inv.issueDate,
+        dueDate: inv.dueDate,
+        grandTotal: grand,
+        balanceDue: due,
+        status: inv.status,
+        currency: inv.currency || 'ZMW',
+        customerId: inv.customerId,
+        customerName: inv.customer?.name || ''
+      };
+    }));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1409,32 +1447,83 @@ app.get('/api/invoices/:id', async (req, res) => {
   }
 });
 
+app.get('/api/invoices/:id/transactions', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const invoice = await prisma.invoice.findFirst({
+      where: { OR: [{ id }, { reference: id }] },
+      include: { customer: true }
+    });
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const allocs: any[] = await listReceiptAllocations(prisma, undefined, invoice.id);
+    const receiptIds: string[] = Array.from(new Set(allocs.map((a: any) => a.receiptId)));
+    const receipts = receiptIds.length
+      ? await prisma.receipt.findMany({ where: { id: { in: receiptIds } } })
+      : [];
+    const receiptMap: Record<string, any> = {};
+    for (const r of receipts) receiptMap[r.id] = r;
+
+    let running = Number(invoice.grandTotal || 0);
+    const rows: any[] = [{
+      id: invoice.id,
+      date: invoice.issueDate,
+      transaction: 'Sales Invoice',
+      customer: invoice.customer?.name || '',
+      description: invoice.reference,
+      amount: Number(invoice.grandTotal || 0),
+      balance: running
+    }];
+    for (const a of allocs) {
+      running = Math.round((running - Number(a.amount)) * 100) / 100;
+      const receipt = receiptMap[a.receiptId];
+      rows.push({
+        id: a.id,
+        date: receipt?.date || a.createdAt,
+        transaction: 'Receipt',
+        customer: receipt?.paidByContact || invoice.customer?.name || '',
+        description: receipt?.reference || 'Receipt allocation',
+        amount: -Number(a.amount),
+        balance: running
+      });
+    }
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/invoices', async (req, res) => {
   const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency } = req.body;
   try {
-    const result = await prisma.invoice.create({
-      data: {
-        customerId,
-        reference,
-        grandTotal,
-        balanceDue,
-        currency,
-        issueDate: parseDate(issueDate),
-        dueDate: parseDate(dueDate),
-        docOptions: { ...(docOptions || {}), description },
-        items: {
-          create: items.map((item: any) => ({
-            itemId: item.itemId,
-            description: item.description,
-            qty: item.qty,
-            unitPrice: item.unitPrice,
-            discount: item.discount,
-            division: item.division,
-            tax_code_id: item.tax_code_id,
-            totalAmount: item.totalAmount
-          }))
-        }
-      }
+    const result = await prisma.$transaction(async (tx) => {
+      const invoice = await tx.invoice.create({
+        data: {
+          customerId,
+          reference,
+          grandTotal,
+          balanceDue,
+          currency,
+          issueDate: parseDate(issueDate),
+          dueDate: parseDate(dueDate),
+          docOptions: { ...(docOptions || {}), description },
+          items: {
+            create: items.map((item: any) => ({
+              itemId: item.itemId,
+              description: item.description,
+              qty: item.qty,
+              unitPrice: item.unitPrice,
+              discount: item.discount,
+              division: item.division,
+              tax_code_id: item.tax_code_id,
+              totalAmount: item.totalAmount
+            }))
+          }
+        },
+        include: { items: true }
+      });
+      await postSalesInvoice(tx, invoice);
+      return invoice;
     });
     res.json(result);
   } catch (err) {
@@ -1446,31 +1535,36 @@ app.put('/api/invoices/:id', async (req, res) => {
   const { id } = req.params;
   const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency } = req.body;
   try {
-    await prisma.invoiceItem.deleteMany({ where: { invoiceId: id } });
-    const result = await prisma.invoice.update({
-      where: { id },
-      data: {
-        customerId,
-        reference,
-        grandTotal,
-        balanceDue,
-        currency,
-        issueDate: parseDate(issueDate),
-        dueDate: parseDate(dueDate),
-        docOptions: { ...(docOptions || {}), description },
-        items: {
-          create: items.map((item: any) => ({
-            itemId: item.itemId,
-            description: item.description,
-            qty: item.qty,
-            unitPrice: item.unitPrice,
-            discount: item.discount,
-            division: item.division,
-            tax_code_id: item.tax_code_id,
-            totalAmount: item.totalAmount
-          }))
-        }
-      }
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+      const invoice = await tx.invoice.update({
+        where: { id },
+        data: {
+          customerId,
+          reference,
+          grandTotal,
+          balanceDue,
+          currency,
+          issueDate: parseDate(issueDate),
+          dueDate: parseDate(dueDate),
+          docOptions: { ...(docOptions || {}), description },
+          items: {
+            create: items.map((item: any) => ({
+              itemId: item.itemId,
+              description: item.description,
+              qty: item.qty,
+              unitPrice: item.unitPrice,
+              discount: item.discount,
+              division: item.division,
+              tax_code_id: item.tax_code_id,
+              totalAmount: item.totalAmount
+            }))
+          }
+        },
+        include: { items: true }
+      });
+      await postSalesInvoice(tx, invoice);
+      return invoice;
     });
     res.json(result);
   } catch (err) {
@@ -2032,7 +2126,9 @@ app.get('/api/suppliers', async (req, res) => {
       },
       orderBy: { created_at: 'desc' }
     });
+    const positions = await suppliersMoneyPositions(prisma, suppliers);
     const suppliersWithCounts = suppliers.map(supplier => {
+      const pos = positions[supplier.id] || { debit: 0, advance: 0, balance: 0 };
       const activeEnquiries = (supplier.purchaseEnquiries || []).filter((q: any) => {
         const status = (q.status || '').toLowerCase();
         return status !== 'accepted' && status !== 'rejected';
@@ -2043,13 +2139,6 @@ app.get('/api/suppliers', async (req, res) => {
         return status !== 'invoiced' && status !== 'rejected' && status !== 'closed';
       }).length;
 
-      const balance = (supplier.invoices || []).reduce((sum: number, inv: any) => {
-        if (inv.status !== 'Paid') {
-          return sum + (parseFloat(inv.grand_total || '0') || 0);
-        }
-        return sum;
-      }, 0);
-
       const grnsCount = (supplier.goodsReceivedNotes || []).length;
       const piGrnsCount = (supplier.invoices || []).filter((inv: any) => {
         const opts = inv.docOptions as any;
@@ -2058,13 +2147,16 @@ app.get('/api/suppliers', async (req, res) => {
 
       return {
         ...supplier,
-        balance,
+        debit: pos.debit,
+        advance: pos.advance,
+        accountsPayable: pos.debit,
+        balance: pos.balance,
         purchaseEnquiries: activeEnquiries,
         purchaseOrders: activeOrders,
         purchaseInvoices: (supplier.invoices || []).length,
         goodsReceipts: grnsCount + piGrnsCount,
         debitNotes: 0, // Debit Notes model is currently missing from schema
-        status: supplier.inactive ? 'Inactive' : (balance < 0 ? 'Overpaid' : (balance === 0 ? 'Paid' : 'Unpaid'))
+        status: supplier.inactive ? 'Inactive' : (pos.balance < 0 ? 'Overpaid' : (pos.balance === 0 ? 'Paid' : 'Unpaid'))
       };
     });
     res.json(suppliersWithCounts);
@@ -2083,10 +2175,50 @@ app.get('/api/suppliers/:id', async (req, res) => {
     if (!supplier) {
       return res.status(404).json({ error: 'Supplier not found' });
     }
+    const pos = await suppliersMoneyPositions(prisma, [supplier]);
+    const money = pos[supplier.id] || { debit: 0, advance: 0, balance: 0 };
     res.json({
       ...supplier,
-      status: supplier.inactive ? 'Inactive' : supplier.status
+      debit: money.debit,
+      advance: money.advance,
+      accountsPayable: money.debit,
+      balance: money.balance,
+      status: supplier.inactive ? 'Inactive' : (money.balance < 0 ? 'Overpaid' : (money.balance === 0 ? 'Paid' : 'Unpaid'))
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/suppliers/:id/invoices', async (req, res) => {
+  try {
+    const invs = await prisma.invoices.findMany({
+      where: { supplier_id: req.params.id },
+      include: { suppliers: true },
+      orderBy: { created_at: 'asc' }
+    });
+    const allocs: any[] = await listPaymentAllocations(prisma);
+    const paidMap: Record<string, number> = {};
+    for (const a of allocs) {
+      paidMap[String(a.invoiceId)] = Number(a.amount || 0);
+    }
+    res.json(invs.map((inv) => {
+      const grand = Number(inv.grand_total || 0);
+      const paid = paidMap[inv.id] || 0;
+      const due = Math.max(0, Math.round((grand - paid) * 100) / 100);
+      return {
+        id: inv.id,
+        reference: inv.reference,
+        issueDate: inv.created_at,
+        dueDate: inv.due_date,
+        grandTotal: grand,
+        balanceDue: due,
+        status: inv.status,
+        currency: (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+        supplierId: inv.supplier_id,
+        supplierName: inv.suppliers?.name || ''
+      };
+    }));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2167,20 +2299,24 @@ app.get('/api/receipts', async (req, res) => {
 });
 
 app.post('/api/receipts', async (req, res) => {
-  const { reference, date, paidByContact, receivedInAccount, description, amount, currency, status, items } = req.body;
+  const { reference, date, paidByContact, receivedInAccount, description, amount, currency, status, items, allocations } = req.body;
   try {
-    const result = await prisma.receipt.create({
-      data: {
-        reference,
-        date: date ? new Date(date) : undefined,
-        paidByContact,
-        receivedInAccount,
-        description,
-        amount,
-        currency,
-        status: status || 'Completed',
-        items: items || null
-      }
+    const result = await prisma.$transaction(async (tx) => {
+      const receipt = await tx.receipt.create({
+        data: {
+          reference,
+          date: date ? new Date(date) : undefined,
+          paidByContact,
+          receivedInAccount,
+          description,
+          amount,
+          currency,
+          status: status || 'Completed',
+          items: items || null
+        }
+      });
+      await postReceipt(tx, receipt, allocations);
+      return receipt;
     });
     res.json(result);
   } catch (err) {
@@ -2196,7 +2332,8 @@ app.get('/api/receipts/:id', async (req, res) => {
     if (!receipt) {
       return res.status(404).json({ error: 'Receipt not found' });
     }
-    res.json(receipt);
+    const allocations = await listReceiptAllocations(prisma, receipt.id);
+    res.json({ ...receipt, allocations });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2204,20 +2341,24 @@ app.get('/api/receipts/:id', async (req, res) => {
 
 app.put('/api/receipts/:id', async (req, res) => {
   try {
-    const { reference, date, paidByContact, receivedInAccount, description, amount, currency, status, items } = req.body;
-    const updatedReceipt = await prisma.receipt.update({
-      where: { id: req.params.id },
-      data: {
-        reference,
-        date: date ? new Date(date) : undefined,
-        paidByContact,
-        receivedInAccount,
-        description,
-        amount,
-        currency,
-        status: status || 'Completed',
-        items: items || null
-      }
+    const { reference, date, paidByContact, receivedInAccount, description, amount, currency, status, items, allocations } = req.body;
+    const updatedReceipt = await prisma.$transaction(async (tx) => {
+      const receipt = await tx.receipt.update({
+        where: { id: req.params.id },
+        data: {
+          reference,
+          date: date ? new Date(date) : undefined,
+          paidByContact,
+          receivedInAccount,
+          description,
+          amount,
+          currency,
+          status: status || 'Completed',
+          items: items || null
+        }
+      });
+      await postReceipt(tx, receipt, allocations);
+      return receipt;
     });
     res.json(updatedReceipt);
   } catch (err: any) {
@@ -2232,6 +2373,44 @@ app.get('/api/tax-codes', async (req, res) => {
     res.json(codes);
   } catch (err: any) {
     console.error('Fetch tax codes error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tax-codes', async (req, res) => {
+  const { name, rate } = req.body;
+  try {
+    const code = await prisma.tax_codes.create({
+      data: { name, rate: Number(rate) }
+    });
+    res.json(code);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tax-codes/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, rate } = req.body;
+  try {
+    const code = await prisma.tax_codes.update({
+      where: { id },
+      data: { name, rate: Number(rate) }
+    });
+    res.json(code);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tax-codes/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.tax_codes.delete({
+      where: { id }
+    });
+    res.json({ success: true });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -2257,14 +2436,9 @@ app.get('/api/accounts', async (req, res) => {
       orderBy: { code: 'asc' }
     });
     const accountsWithTypesAndBalances = accounts.map(a => {
-      let balance = 0;
       const sumDebit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
       const sumCredit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
-      if (['Asset', 'Expense'].includes(a.accountType)) {
-        balance = sumDebit - sumCredit;
-      } else {
-        balance = sumCredit - sumDebit;
-      }
+      const balance = signedBalance(a.accountType, sumDebit, sumCredit);
       return { ...a, type: a.accountType, balance };
     });
     res.json(accountsWithTypesAndBalances);
@@ -2282,18 +2456,174 @@ app.get('/api/accounts/:id', async (req, res) => {
       return res.status(404).json({ error: 'Account not found' });
     }
     // Calculate balance on the fly since ViewBankAccountView uses it
-    let balance = 0;
     const entries = await prisma.ledgerEntry.findMany({
       where: { accountId: req.params.id }
     });
     const sumDebit = entries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
     const sumCredit = entries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
-    if (['Asset', 'Expense'].includes(account.accountType)) {
-      balance = sumDebit - sumCredit;
-    } else {
-      balance = sumCredit - sumDebit;
-    }
+    const balance = signedBalance(account.accountType, sumDebit, sumCredit);
     res.json({ ...account, type: account.accountType, balance });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/accounts/:id', async (req, res) => {
+  try {
+    const { name, code, type, isPaymentAccount, inactive } = req.body;
+    const data: any = {
+      name: name != null ? String(name).trim() : undefined,
+      accountType: type,
+      isPaymentAccount,
+      inactive
+    };
+    if (typeof code === 'string' && code.trim()) {
+      data.code = code.trim();
+    }
+    const result = await prisma.chartOfAccount.update({
+      where: { id: req.params.id },
+      data
+    });
+    res.json({ ...result, type: result.accountType });
+  } catch (err: any) {
+    console.error('Update account error:', err);
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'An account with this code already exists. Use a different code.' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/accounts/:id/ledger', async (req, res) => {
+  try {
+    const account = await prisma.chartOfAccount.findUnique({
+      where: { id: req.params.id }
+    });
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    const from = req.query.from ? new Date(String(req.query.from)) : null;
+    const to = req.query.to ? new Date(String(req.query.to)) : null;
+    const where: any = { accountId: req.params.id };
+    if (from || to) {
+      where.transactionDate = {};
+      if (from && !isNaN(from.getTime())) where.transactionDate.gte = from;
+      if (to && !isNaN(to.getTime())) where.transactionDate.lte = to;
+    }
+
+    const entries = await prisma.ledgerEntry.findMany({
+      where,
+      orderBy: [{ transactionDate: 'asc' }, { id: 'asc' }]
+    });
+
+    let running = 0;
+    const mapped = entries.map((entry) => {
+      const debit = Number(entry.debit || 0);
+      const credit = Number(entry.credit || 0);
+      if (['Asset', 'Expense'].includes(account.accountType)) {
+        running += debit - credit;
+      } else {
+        running += credit - debit;
+      }
+      return {
+        id: entry.id,
+        date: entry.transactionDate,
+        transactionType: entry.transactionType,
+        sourceDocumentId: entry.source_document_id,
+        debit,
+        credit,
+        balance: Math.round(running * 100) / 100
+      };
+    });
+
+    res.json({
+      account: { ...account, type: account.accountType, balance: mapped.length ? mapped[mapped.length - 1].balance : 0 },
+      entries: mapped
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/trial-balance', async (req, res) => {
+  try {
+    const from = req.query.from ? new Date(String(req.query.from)) : null;
+    const to = req.query.to ? new Date(String(req.query.to)) : null;
+    const dateFilter: any = {};
+    if (from && !isNaN(from.getTime())) dateFilter.gte = from;
+    if (to && !isNaN(to.getTime())) dateFilter.lte = to;
+
+    const accounts = await prisma.chartOfAccount.findMany({
+      include: {
+        ledgerEntries: Object.keys(dateFilter).length
+          ? { where: { transactionDate: dateFilter } }
+          : true
+      },
+      orderBy: { code: 'asc' }
+    });
+
+    const rows = accounts.map((account) => {
+      const entries = account.ledgerEntries || [];
+      const debit = entries.reduce((sum, e) => sum + Number(e.debit || 0), 0);
+      const credit = entries.reduce((sum, e) => sum + Number(e.credit || 0), 0);
+      return {
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        accountType: account.accountType,
+        debit: Math.round(debit * 100) / 100,
+        credit: Math.round(credit * 100) / 100,
+        balance: signedBalance(account.accountType, debit, credit)
+      };
+    });
+
+    const totals = rows.reduce(
+      (acc, row) => ({ debit: acc.debit + row.debit, credit: acc.credit + row.credit }),
+      { debit: 0, credit: 0 }
+    );
+
+    res.json({
+      from: from && !isNaN(from.getTime()) ? from : null,
+      to: to && !isNaN(to.getTime()) ? to : null,
+      rows,
+      totals: {
+        debit: Math.round(totals.debit * 100) / 100,
+        credit: Math.round(totals.credit * 100) / 100
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ledger/backfill', async (_req, res) => {
+  try {
+    const result = await backfillUnpostedDocuments(prisma);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/accounting-nav-counts', async (_req, res) => {
+  const safeCount = async (fn: () => Promise<number>) => {
+    try {
+      return await fn();
+    } catch {
+      return 0;
+    }
+  };
+
+  try {
+    const [bankAccounts, receipts, payments, transfers, expenseClaims] = await Promise.all([
+      safeCount(() => prisma.chartOfAccount.count({ where: { isPaymentAccount: true } })),
+      safeCount(() => prisma.receipt.count()),
+      safeCount(() => prisma.payment.count()),
+      safeCount(() => prisma.interAccountTransfer.count()),
+      safeCount(() => prisma.expenseClaim.count()),
+    ]);
+    res.json({ bankAccounts, receipts, payments, transfers, expenseClaims });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2309,16 +2639,10 @@ app.get('/api/summary', async (req, res) => {
     });
 
     const accountsWithBalances = accounts.map(account => {
-      let balance = 0;
       const entries = account.ledgerEntries || [];
       const sumDebit = entries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
       const sumCredit = entries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
-
-      if (['Asset', 'Expense'].includes(account.accountType)) {
-        balance = sumDebit - sumCredit;
-      } else {
-        balance = sumCredit - sumDebit;
-      }
+      const balance = signedBalance(account.accountType, sumDebit, sumCredit);
 
       // We remove the raw entries so we don't send huge payloads
       const { ledgerEntries, ...accountData } = account;
@@ -2342,14 +2666,9 @@ app.get('/api/bank-accounts', async (req, res) => {
       orderBy: { name: 'asc' }
     });
     const accountsWithTypesAndBalances = accounts.map(a => {
-      let balance = 0;
       const sumDebit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
       const sumCredit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
-      if (['Asset', 'Expense'].includes(a.accountType)) {
-        balance = sumDebit - sumCredit;
-      } else {
-        balance = sumCredit - sumDebit;
-      }
+      const balance = signedBalance(a.accountType, sumDebit, sumCredit);
       return { ...a, type: a.accountType, balance };
     });
     res.json(accountsWithTypesAndBalances);
@@ -2361,17 +2680,26 @@ app.get('/api/bank-accounts', async (req, res) => {
 app.post('/api/accounts', async (req, res) => {
   try {
     const { name, code, type, isPaymentAccount } = req.body;
-    const uniqueCode = code || `ACC-${Date.now()}`;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Account name is required' });
+    }
+    const uniqueCode = (typeof code === 'string' && code.trim())
+      ? code.trim()
+      : `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const result = await prisma.chartOfAccount.create({
       data: {
-        name,
+        name: String(name).trim(),
         code: uniqueCode,
         accountType: type || 'Asset',
         isPaymentAccount: isPaymentAccount || false
       }
     });
-    res.json(result);
+    res.json({ ...result, type: result.accountType, balance: 0 });
   } catch (err: any) {
+    console.error('Create account error:', err);
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'An account with this code already exists. Leave code blank or use a different code.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -2379,10 +2707,13 @@ app.post('/api/accounts', async (req, res) => {
 app.post('/api/bank-accounts', async (req, res) => {
   try {
     const { name, code, type, isPaymentAccount } = req.body;
-    const uniqueCode = code || `BNK-${Date.now()}`;
+    const uniqueCode = (typeof code === 'string' && code.trim()) ? code.trim() : `BNK-${Date.now()}`;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Account name is required' });
+    }
     const result = await prisma.chartOfAccount.create({
       data: {
-        name,
+        name: String(name).trim(),
         code: uniqueCode,
         accountType: type || 'Asset',
         isPaymentAccount: isPaymentAccount ?? true
@@ -2390,6 +2721,10 @@ app.post('/api/bank-accounts', async (req, res) => {
     });
     res.json(result);
   } catch (err: any) {
+    console.error('Create bank account error:', err);
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'An account with this code already exists. Use a different code.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -2935,6 +3270,7 @@ app.post('/api/inventory-write-offs', async (req, res) => {
         }
       }
 
+      await postInventoryWriteOff(tx, wo);
       return wo;
     });
 
@@ -3007,6 +3343,7 @@ app.patch('/api/inventory-write-offs/:id', async (req, res) => {
         }
       }
 
+      await postInventoryWriteOff(tx, updatedWo);
       return updatedWo;
     });
 
@@ -3081,6 +3418,7 @@ app.put('/api/inventory-write-offs/:id', async (req, res) => {
         }
       }
 
+      await postInventoryWriteOff(tx, updatedWo);
       return updatedWo;
     });
 
@@ -3165,6 +3503,12 @@ app.post('/api/debit-notes', async (req, res) => {
       });
 
       if (status !== 'Draft') {
+        try {
+          await postDebitNote(tx, { ...dn, items, supplierId, customerId, amount });
+        } catch (ledgerErr: any) {
+          console.error('Failed to post debit note to ledger:', ledgerErr);
+        }
+
         if (supplierId) {
           await tx.suppliers.update({
             where: { id: supplierId },
@@ -3180,21 +3524,7 @@ app.post('/api/debit-notes', async (req, res) => {
 
         for (const item of items) {
           if (item.itemId && (item.account === 'Inventory on hand' || !item.account)) {
-            await tx.item.update({
-              where: { id: item.itemId },
-              data: { qtyOnHand: { decrement: item.qty || 0 } }
-            });
-            await tx.stockLedger.create({
-              data: {
-                itemId: item.itemId,
-                date: new Date(issueDate),
-                reference: reference,
-                type: 'Debit Note',
-                qtyOut: item.qty || 0,
-                qtyIn: 0,
-                unitCost: item.unitPrice || 0
-              }
-            });
+            await adjustItemInventory(item.itemId, -(item.qty || 0), 'Debit Note', dn.id, null, tx);
           }
         }
       }
@@ -3266,6 +3596,11 @@ app.post('/api/credit-notes', async (req, res) => {
       },
       include: { items: true, customer: true }
     });
+    try {
+      await postCreditNote(prisma, newNote);
+    } catch (ledgerErr: any) {
+      console.error('Failed to post credit note to ledger:', ledgerErr);
+    }
     res.json(newNote);
   } catch (err) {
     console.error('Error creating credit note:', err);
@@ -3306,6 +3641,11 @@ app.put('/api/credit-notes/:id', async (req, res) => {
       },
       include: { items: true, customer: true }
     });
+    try {
+      await postCreditNote(prisma, updatedNote);
+    } catch (ledgerErr: any) {
+      console.error('Failed to post credit note update to ledger:', ledgerErr);
+    }
     res.json(updatedNote);
   } catch (err) {
     console.error('Error updating credit note:', err);
@@ -3710,6 +4050,11 @@ app.get('/api/purchase-invoices', async (req, res) => {
       },
       orderBy: { created_at: 'desc' }
     });
+    const allocs: any[] = await listPaymentAllocations(prisma);
+    const paidMap: Record<string, number> = {};
+    for (const a of allocs) {
+      paidMap[a.invoiceId] = Number(a.amount || 0);
+    }
     const mapped = invs.map(inv => {
       const itemsTotal = (inv.items || []).reduce((sum, item) => {
         const itemTotal = Number(item.totalAmount) || 0;
@@ -3723,13 +4068,15 @@ app.get('/api/purchase-invoices', async (req, res) => {
         const discountAmount = isExact ? discountVal : (lineExTax * (discountVal / 100));
         return sum + discountAmount;
       }, 0);
+      const grand = Number(inv.grand_total) > 0 ? Number(inv.grand_total) : itemsTotal;
+      const paid = paidMap[inv.id] || 0;
       return {
         ...inv,
         description: inv.description || '',
         dueDate: inv.due_date ? formatDate(inv.due_date) : null,
         timestamp: inv.created_at ? formatDateTime(inv.created_at) : null,
-        invoiceAmount: Number(inv.grand_total) > 0 ? Number(inv.grand_total) : itemsTotal,
-        balanceDue: Number(inv.grand_total) > 0 ? Number(inv.grand_total) : itemsTotal,
+        invoiceAmount: grand,
+        balanceDue: Math.max(0, Math.round((grand - paid) * 100) / 100),
         supplier: inv.suppliers?.name || 'Unknown',
         supplierId: inv.supplier_id,
         currency: (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
@@ -3828,6 +4175,12 @@ app.post('/api/purchase-invoices', async (req, res) => {
     });
     console.log(`[PI POST] Success. Created ID: ${result.id}, Items: ${result.items?.length}`);
 
+    try {
+      await postPurchaseInvoice(prisma, result);
+    } catch (ledgerErr: any) {
+      console.error('Failed to post purchase invoice to ledger:', ledgerErr);
+    }
+
     // Populate procurement price history automatically for each item in the purchase invoice
     if (result.items && result.items.length > 0) {
       try {
@@ -3897,8 +4250,14 @@ app.put('/api/purchase-invoices/:id', async (req, res) => {
             account: i.account || 'Inventory'
           }))
         }
-      }
+      },
+      include: { items: true }
     });
+    try {
+      await postPurchaseInvoice(prisma, result);
+    } catch (ledgerErr: any) {
+      console.error('Failed to post purchase invoice update to ledger:', ledgerErr);
+    }
     res.json(result);
   } catch (err: any) {
     console.error('[PURCHASE INVOICE UPDATE ERROR]:', err);
@@ -4148,9 +4507,11 @@ app.post('/api/goods-received-notes', async (req, res) => {
         include: { items: true }
       });
 
-      for (const item of grn.items) {
-        if (item.itemId) {
-          await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', grn.id, inventoryLocation, tx);
+      if (grn.status === 'Approved' || grn.status === 'Received') {
+        for (const item of grn.items) {
+          if (item.itemId) {
+            await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', grn.id, inventoryLocation, tx);
+          }
         }
       }
 
@@ -4232,15 +4593,17 @@ app.put('/api/goods-received-notes/:id', async (req, res) => {
       });
 
       if (grn) {
-        for (const item of grn.items) {
-          if (item.itemId) {
-            await tx.item.update({
-              where: { id: item.itemId },
-              data: { qtyOnHand: { decrement: Number(item.qty) } }
-            });
+        if (grn.status === 'Approved' || grn.status === 'Received') {
+          for (const item of grn.items) {
+            if (item.itemId) {
+              await tx.item.update({
+                where: { id: item.itemId },
+                data: { qtyOnHand: { decrement: Number(item.qty) } }
+              });
+            }
           }
+          await tx.stockLedger.deleteMany({ where: { sourceDocumentId: id } });
         }
-        await tx.stockLedger.deleteMany({ where: { sourceDocumentId: id } });
 
         const updatedGrn = await tx.goodsReceivedNote.update({
           where: { id },
@@ -4264,9 +4627,11 @@ app.put('/api/goods-received-notes/:id', async (req, res) => {
           include: { items: true }
         });
 
-        for (const item of updatedGrn.items) {
-          if (item.itemId) {
-            await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', updatedGrn.id, inventoryLocation, tx);
+        if (updatedGrn.status === 'Approved' || updatedGrn.status === 'Received') {
+          for (const item of updatedGrn.items) {
+            if (item.itemId) {
+              await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', updatedGrn.id, inventoryLocation, tx);
+            }
           }
         }
 
@@ -4458,7 +4823,8 @@ app.get('/api/payments/:id', async (req, res) => {
       where: { id: req.params.id }
     });
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
-    res.json(payment);
+    const allocations = await listPaymentAllocations(prisma, payment.id);
+    res.json({ ...payment, allocations });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -4466,19 +4832,23 @@ app.get('/api/payments/:id', async (req, res) => {
 
 app.post('/api/payments', async (req, res) => {
   try {
-    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, status, items } = req.body;
-    const newPayment = await prisma.payment.create({
-      data: {
-        reference,
-        date: date ? new Date(date) : undefined,
-        paidToContact,
-        paidFromAccount,
-        description,
-        amount,
-        currency,
-        status: status || 'Completed',
-        items: items || null
-      }
+    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, status, items, allocations } = req.body;
+    const newPayment = await prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.create({
+        data: {
+          reference,
+          date: date ? new Date(date) : undefined,
+          paidToContact,
+          paidFromAccount,
+          description,
+          amount,
+          currency,
+          status: status || 'Completed',
+          items: items || null
+        }
+      });
+      await postPayment(tx, payment, allocations);
+      return payment;
     });
     res.json(newPayment);
   } catch (err: any) {
@@ -4488,20 +4858,24 @@ app.post('/api/payments', async (req, res) => {
 
 app.put('/api/payments/:id', async (req, res) => {
   try {
-    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, status, items } = req.body;
-    const updatedPayment = await prisma.payment.update({
-      where: { id: req.params.id },
-      data: {
-        reference,
-        date: date ? new Date(date) : undefined,
-        paidToContact,
-        paidFromAccount,
-        description,
-        amount,
-        currency,
-        status: status || 'Completed',
-        items: items || null
-      }
+    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, status, items, allocations } = req.body;
+    const updatedPayment = await prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.update({
+        where: { id: req.params.id },
+        data: {
+          reference,
+          date: date ? new Date(date) : undefined,
+          paidToContact,
+          paidFromAccount,
+          description,
+          amount,
+          currency,
+          status: status || 'Completed',
+          items: items || null
+        }
+      });
+      await postPayment(tx, payment, allocations);
+      return payment;
     });
     res.json(updatedPayment);
   } catch (err: any) {
@@ -4511,8 +4885,12 @@ app.put('/api/payments/:id', async (req, res) => {
 
 app.delete('/api/payments/:id', async (req, res) => {
   try {
-    await prisma.payment.delete({
-      where: { id: req.params.id }
+    await prisma.$transaction(async (tx) => {
+      await reversePaymentAllocations(tx, req.params.id);
+      await reverseJournal(tx, req.params.id);
+      await tx.payment.delete({
+        where: { id: req.params.id }
+      });
     });
     res.json({ success: true });
   } catch (err: any) {
@@ -4561,30 +4939,7 @@ app.post('/api/inter-account-transfers', async (req, res) => {
           status: 'Completed'
         }
       });
-
-      // Double-entry ledger (Credit Source, Debit Destination)
-      await tx.ledgerEntry.create({
-        data: {
-          accountId: paidFromAccount,
-          transactionDate: new Date(date),
-          transactionType: 'Inter Account Transfer',
-          source_document_id: transfer.id,
-          credit: amount,
-          debit: 0
-        }
-      });
-
-      await tx.ledgerEntry.create({
-        data: {
-          accountId: receivedInAccount,
-          transactionDate: new Date(date),
-          transactionType: 'Inter Account Transfer',
-          source_document_id: transfer.id,
-          debit: amount,
-          credit: 0
-        }
-      });
-
+      await postTransfer(tx, transfer);
       return transfer;
     });
     res.status(201).json(result);
@@ -4665,71 +5020,32 @@ app.post('/api/expense-claims', async (req, res) => {
   try {
     const { date, reference, payerId, payee, currency, description, amountsAreTaxInclusive, items } = req.body;
     
-    // Create the expense claim header and lines
-    const result = await prisma.expenseClaim.create({
-      data: {
-        date: new Date(date),
-        reference: reference || 'EXP-' + Date.now(),
-        payerId,
-        payee,
-        currency,
-        description,
-        amountsAreTaxInclusive,
-        items: {
-          create: items.map((item: any) => ({
-            accountId: item.account,
-            description: item.description,
-            qty: Number(item.qty || 1),
-            unitPrice: Number(item.unitPrice || 0),
-            taxCode: item.taxCode,
-            taxAmount: Number(item.taxAmount || 0)
-          }))
-        }
-      },
-      include: { items: true }
+    const result = await prisma.$transaction(async (tx) => {
+      const claim = await tx.expenseClaim.create({
+        data: {
+          date: new Date(date),
+          reference: reference || 'EXP-' + Date.now(),
+          payerId,
+          payee,
+          currency,
+          description,
+          amountsAreTaxInclusive,
+          items: {
+            create: items.map((item: any) => ({
+              accountId: item.account,
+              description: item.description,
+              qty: Number(item.qty || 1),
+              unitPrice: Number(item.unitPrice || 0),
+              taxCode: item.taxCode,
+              taxAmount: Number(item.taxAmount || 0)
+            }))
+          }
+        },
+        include: { items: true }
+      });
+      await postExpenseClaim(tx, claim);
+      return claim;
     });
-
-    // Accounting: Debit Expense Accounts, Credit Expense Claims Payable (Liability)
-    const liabilityAccount = await prisma.chartOfAccount.findFirst({
-      where: { name: 'Expense Claims Payable' }
-    }) || await prisma.chartOfAccount.create({
-      data: {
-        name: 'Expense Claims Payable',
-        code: 'LIAB-EXP-CLAIMS',
-        accountType: 'Liability',
-        isPaymentAccount: false
-      }
-    });
-
-    let totalClaimAmount = 0;
-    const ledgerEntries = [];
-    for (const item of result.items) {
-      if (!item.accountId) continue;
-      const lineTotal = Number(item.qty || 1) * Number(item.unitPrice || 0);
-      totalClaimAmount += lineTotal;
-
-      // Debit the expense account
-      ledgerEntries.push({
-        accountId: item.accountId,
-        debit: lineTotal,
-        credit: 0
-      });
-    }
-
-    // Credit the Liability Account for the total amount
-    if (totalClaimAmount > 0) {
-      ledgerEntries.push({
-        accountId: liabilityAccount.id,
-        debit: 0,
-        credit: totalClaimAmount
-      });
-    }
-
-    if (ledgerEntries.length > 0) {
-      await prisma.ledgerEntry.createMany({
-        data: ledgerEntries
-      });
-    }
 
     res.json(result);
   } catch (err: any) {
@@ -4783,7 +5099,244 @@ app.delete('/api/transaction-items/:id', async (req, res) => {
   }
 });
 
-app.use((req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: ACTIVITY LOGGING MIDDLEWARE
+// Logs every mutating request (POST / PUT / PATCH / DELETE) automatically
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ACTIVITY_MODULE_MAP: Record<string, string> = {
+  'invoices': 'Sales Invoice',
+  'sales-orders': 'Sales Order',
+  'sales-quotes': 'Sales Quote',
+  'delivery-notes': 'Delivery Note',
+  'credit-notes': 'Credit Note',
+  'receipts': 'Receipt',
+  'purchase-orders': 'Purchase Order',
+  'purchase-invoices': 'Purchase Invoice',
+  'purchase-quotes': 'Purchase Enquiry',
+  'goods-received-notes': 'Goods Receipt Note',
+  'payments': 'Payment',
+  'debit-notes': 'Debit Note',
+  'customers': 'Customer',
+  'suppliers': 'Supplier',
+  'inventory-items': 'Inventory Item',
+  'inventory-transfers': 'Inventory Transfer',
+  'inventory-write-offs': 'Inventory Write-off',
+  'accounts': 'Account',
+  'tax-codes': 'Tax Code',
+  'auth': 'Authentication',
+};
+
+function getModuleFromUrl(url: string): string {
+  const parts = url.replace('/api/', '').split('/');
+  const key = parts[0];
+  return ACTIVITY_MODULE_MAP[key] || key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getActionFromMethod(method: string): string {
+  const map: Record<string, string> = { POST: 'CREATE', PUT: 'UPDATE', PATCH: 'UPDATE', DELETE: 'DELETE', GET: 'VIEW' };
+  return map[method] || method;
+}
+
+// Async fire-and-forget logger — never blocks the request
+async function logActivity(req: any, action?: string, module?: string, reference?: string, details?: string) {
+  try {
+    const user = req.user;
+    await (prisma as any).activityLog.create({
+      data: {
+        userId: user?.userId || null,
+        userName: user?.email || 'System',
+        userRole: user?.role || 'Unknown',
+        action: action || getActionFromMethod(req.method),
+        module: module || getModuleFromUrl(req.url),
+        reference: reference || null,
+        details: details || null,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+      }
+    });
+  } catch (_) {
+    // silently ignore log errors — never block the main request
+  }
+}
+
+// Middleware: auto-log all mutating routes
+app.use((req: any, res: any, next: any) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.url.startsWith('/api/')) {
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      if (res.statusCode < 400) {
+        const ref = body?.reference || body?.id || undefined;
+        logActivity(req, getActionFromMethod(req.method), getModuleFromUrl(req.url), ref);
+      }
+      return originalJson(body);
+    };
+  }
+  next();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: ACTIVITY LOGS API
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/admin/activity-logs', async (req: any, res: any) => {
+  try {
+    const { module, action, user, from, to, limit = '200' } = req.query;
+    const where: any = {};
+    if (module) where.module = { contains: module, mode: 'insensitive' };
+    if (action) where.action = action;
+    if (user) where.OR = [
+      { userName: { contains: user, mode: 'insensitive' } },
+      { userRole: { contains: user, mode: 'insensitive' } }
+    ];
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from as string);
+      if (to) where.createdAt.lte = new Date(to as string);
+    }
+    const logs = await (prisma as any).activityLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit as string)
+    });
+    res.json(logs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/activity-logs', async (req: any, res: any) => {
+  try {
+    const { olderThanDays = '90' } = req.query;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - parseInt(olderThanDays as string));
+    const result = await (prisma as any).activityLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    res.json({ deleted: result.count });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: DATABASE BACKUP API
+// ─────────────────────────────────────────────────────────────────────────────
+
+const path = require('path');
+const { mkdirSync, existsSync, statSync, unlinkSync } = require('fs');
+
+const BACKUP_DIR = path.join(__dirname, '..', 'backups');
+try { mkdirSync(BACKUP_DIR, { recursive: true }); } catch (_) {}
+
+function findPgDump(): string {
+  const candidates = [
+    'C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe',
+    'C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe',
+    'C:\\Program Files\\PostgreSQL\\16\\bin\\pg_dump.exe',
+    'C:\\Program Files\\PostgreSQL\\15\\bin\\pg_dump.exe',
+    'pg_dump',
+  ];
+  for (const c of candidates) {
+    if (c === 'pg_dump' || existsSync(c)) return c;
+  }
+  return 'pg_dump';
+}
+
+app.get('/api/admin/backups', async (req: any, res: any) => {
+  try {
+    const records = await (prisma as any).backupRecord.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    
+    // Fix: BigInt cannot be serialized to JSON natively
+    const formattedRecords = records.map((r: any) => ({
+      ...r,
+      sizeBytes: r.sizeBytes ? Number(r.sizeBytes) : null
+    }));
+    
+    res.json(formattedRecords);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/backups', async (req: any, res: any) => {
+  const user = req.user;
+  const triggeredBy = user?.email || 'Manual';
+  const now = new Date();
+  const filename = `backup_${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.dump`;
+  const filePath = path.join(BACKUP_DIR, filename);
+
+  // Create a pending record
+  let record: any;
+  try {
+    record = await (prisma as any).backupRecord.create({
+      data: { filename, status: 'Running', triggeredBy, notes: req.body?.notes || null }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  res.json({ message: 'Backup started', id: record.id, filename });
+
+  // Run pg_dump in the background
+  try {
+    const dbUrl = process.env.DATABASE_URL || '';
+    const match = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
+    if (!match) throw new Error('Cannot parse DATABASE_URL');
+    const [, dbUser, dbPass, dbHost, dbPort, dbName] = match;
+
+    const pgDump = findPgDump();
+    await new Promise<void>((resolve, reject) => {
+      const proc = require('child_process').spawn(pgDump, [
+        '-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', dbName, '-Fc', '-f', filePath
+      ], { env: { ...process.env, PGPASSWORD: dbPass } });
+      proc.on('close', (code: number) => code === 0 ? resolve() : reject(new Error(`pg_dump exited with code ${code}`)));
+    });
+
+    const sizeBytes = statSync(filePath).size;
+    await (prisma as any).backupRecord.update({
+      where: { id: record.id },
+      data: { status: 'Completed', sizeBytes }
+    });
+    logActivity(req, 'BACKUP', 'Database Backup', filename, `Size: ${sizeBytes} bytes`);
+  } catch (err: any) {
+    await (prisma as any).backupRecord.update({
+      where: { id: record.id },
+      data: { status: 'Failed', notes: err.message }
+    }).catch(() => {});
+  }
+});
+
+app.get('/api/admin/backups/:id/download', async (req: any, res: any) => {
+  try {
+    const record = await (prisma as any).backupRecord.findUnique({ where: { id: req.params.id } });
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    
+    const filePath = path.join(BACKUP_DIR, record.filename);
+    if (!existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+
+    res.download(filePath, record.filename);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/backups/:id', async (req: any, res: any) => {
+  try {
+    const record = await (prisma as any).backupRecord.findUnique({ where: { id: req.params.id } });
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    // Delete file if exists
+    try {
+      unlinkSync(path.join(BACKUP_DIR, record.filename));
+    } catch (_) {}
+    await (prisma as any).backupRecord.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.use((req: any, res: any) => {
   console.log(`[404] ${req.method} ${req.url}`);
   res.status(404).json({
     error: 'Route not found',
@@ -4791,10 +5344,13 @@ app.use((req, res) => {
     url: req.url
   });
 });
-
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`🚀 ERP Backend running at http://localhost:${PORT}`);
+    ensureAllocationTables(prisma)
+      .then(() => backfillUnpostedDocuments(prisma))
+      .then((result) => console.log('[ledger] backfill complete', JSON.stringify(result)))
+      .catch((err) => console.error('[ledger] backfill failed', err));
   });
 }
 export default app;

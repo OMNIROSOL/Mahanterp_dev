@@ -105,7 +105,9 @@ const CustomersView = () => {
         { id: 'tpin', label: 'TPIN', visible: true },
         { id: 'salesPerson', label: 'Sales Person', visible: true },
         { id: 'creditDays', label: 'Credit Days', visible: true },
-        { id: 'balance', label: 'Total Outstanding Balance', visible: true },
+        { id: 'debit', label: 'Debit money', visible: true },
+        { id: 'advance', label: 'Advance money', visible: true },
+        { id: 'balance', label: 'Net outstanding', visible: true },
         { id: 'timestamp', label: 'Timestamp', visible: false }
     ];
 
@@ -113,6 +115,21 @@ const CustomersView = () => {
         const saved = localStorage.getItem('customer_column_settings');
         return saved ? JSON.parse(saved) : defaultColumns;
     });
+
+    useEffect(() => {
+        setColumns((current: any[]) => {
+            if (current.some((c: any) => c.id === 'debit')) return current;
+            const extra = [
+                { id: 'debit', label: 'Debit money', visible: true },
+                { id: 'advance', label: 'Advance money', visible: true },
+            ];
+            const idx = current.findIndex((c: any) => c.id === 'balance');
+            const next = [...current];
+            next.splice(idx >= 0 ? idx : next.length, 0, ...extra);
+            localStorage.setItem('customer_column_settings', JSON.stringify(next));
+            return next;
+        });
+    }, []);
 
     useEffect(() => {
         const handleStorageChange = () => {
@@ -488,7 +505,7 @@ const CustomersView = () => {
                                 {columns.filter((c: any) => c.visible).map((col: any) => {
                                     const val = customer[col.id];
 
-                                    if (col.id === 'balance' || col.id === 'uninvoiced' || col.id === 'qtyToDeliver') {
+                                    if (col.id === 'balance' || col.id === 'debit' || col.id === 'advance' || col.id === 'uninvoiced' || col.id === 'qtyToDeliver') {
                                         if (col.id === 'qtyToDeliver') {
                                             return (
                                                 <td key={col.id} className="px-6 py-4">
@@ -501,12 +518,13 @@ const CustomersView = () => {
                                                 </td>
                                             );
                                         }
-                                        if (col.id === 'balance') {
+                                        if (col.id === 'balance' || col.id === 'debit' || col.id === 'advance') {
+                                            const tone = col.id === 'advance' && Number(val) > 0 ? 'text-amber-600' : col.id === 'debit' && Number(val) > 0 ? 'text-indigo-600' : 'text-slate-600';
                                             return (
                                                 <td key={col.id} className="px-6 py-4">
                                                     <Link
                                                         to={`/customers/transactions/${customer.id}`}
-                                                        className="text-[12px] font-bold text-slate-600 hover:text-blue-600 hover:underline transition-all"
+                                                        className={cn("text-[12px] font-bold hover:underline transition-all", tone)}
                                                     >
                                                         {customer.currency?.split(' ')[0] || 'ZMW'} {(Number(val) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </Link>

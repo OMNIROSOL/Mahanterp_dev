@@ -102,7 +102,9 @@ const SuppliersView = () => {
         { id: 'goodsReceipts', label: 'Goods Receipts', visible: true },
         { id: 'qtyToReceive', label: 'Qty to receive', visible: true },
         { id: 'status', label: 'Status', visible: true },
-        { id: 'balance', label: 'Accounts payable', visible: true },
+        { id: 'debit', label: 'Debit money', visible: true },
+        { id: 'advance', label: 'Advance money', visible: true },
+        { id: 'balance', label: 'Net outstanding', visible: true },
         { id: 'withholdingTax', label: 'Withholding tax payable', visible: false },
         { id: 'timestamp', label: 'Timestamp', visible: false }
     ];
@@ -201,16 +203,18 @@ const SuppliersView = () => {
     const currentSlice = sortedSuppliers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
     const totalPages = Math.ceil(sortedSuppliers.length / pageSize) || 1;
 
-    const totals = useMemo<Record<string, { balance: number; withholding: number }>>(() => {
-        const res: Record<string, { balance: number; withholding: number }> = {};
+    const totals = useMemo<Record<string, { balance: number; withholding: number; debit: number; advance: number }>>(() => {
+        const res: Record<string, { balance: number; withholding: number; debit: number; advance: number }> = {};
         sortedSuppliers.forEach(s => {
             const curCode = String(s.currency || 'ZMW').split(' ')[0] || 'ZMW';
-            if (!res[curCode]) res[curCode] = { balance: 0, withholding: 0 };
+            if (!res[curCode]) res[curCode] = { balance: 0, withholding: 0, debit: 0, advance: 0 };
 
             const cleanVal = (v: any) => typeof v === 'number' ? v : parseFloat(String(v || 0).replace(/[^-0-9.]/g, '')) || 0;
 
             res[curCode].balance += cleanVal(s.balance);
             res[curCode].withholding += cleanVal(s.withholdingTax);
+            res[curCode].debit += cleanVal(s.debit);
+            res[curCode].advance += cleanVal(s.advance);
         });
         return res;
     }, [sortedSuppliers]);
@@ -481,12 +485,19 @@ const SuppliersView = () => {
                                             );
                                         }
 
-                                        if (col.id === 'balance' || col.id === 'withholdingTax') {
+                                        if (col.id === 'balance' || col.id === 'debit' || col.id === 'advance' || col.id === 'withholdingTax') {
                                             const symbol = (supplier.currency || 'ZMW').split(' ')[0];
                                             const cleanVal = typeof val === 'number' ? val : parseFloat(String(val || 0).replace(/[^-0-9.]/g, '')) || 0;
+                                            const tone = col.id === 'advance' && cleanVal > 0
+                                                ? 'text-amber-600'
+                                                : col.id === 'debit' && cleanVal > 0
+                                                    ? 'text-indigo-600'
+                                                    : col.id === 'balance'
+                                                        ? 'text-slate-900 cursor-pointer hover:text-indigo-600'
+                                                        : 'text-slate-600';
                                             return (
                                                 <td key={col.id} className="px-6 py-4">
-                                                    <span className={`text-[12px] font-medium ${col.id === 'balance' ? 'text-slate-900 cursor-pointer hover:text-indigo-600' : 'text-slate-600'}`}>
+                                                    <span className={`text-[12px] font-medium ${tone}`}>
                                                         {symbol} {cleanVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </td>
@@ -601,20 +612,20 @@ const SuppliersView = () => {
                                 const activeCols = columns.filter((c: any) => c.visible || c.id === 'name' || c.id === 'division' || c.id === 'controlAccount');
                                 const allCurrencies = Array.from(new Set(sortedSuppliers.map(s => String(s.currency || 'ZMW').split(' ')[0] || 'ZMW'))).sort();
                                 return activeCols.map((col: any) => {
-                                    if (col.id === 'balance' || col.id === 'withholdingTax') {
-                                        const key = col.id === 'balance' ? 'balance' : 'withholding';
+                                    if (col.id === 'balance' || col.id === 'debit' || col.id === 'advance' || col.id === 'withholdingTax') {
+                                        const key = col.id === 'withholdingTax' ? 'withholding' : col.id;
                                         return (
                                             <td key={`total-${col.id}`} className="px-6 py-4 whitespace-nowrap bg-indigo-50/5">
                                                 <div className="flex flex-col gap-1.5">
                                                     {allCurrencies.length > 0 ? allCurrencies.map(cur => {
-                                                        const amount = totals[cur]?.[key] || 0;
+                                                        const amount = totals[cur]?.[key as 'balance' | 'withholding' | 'debit' | 'advance'] || 0;
                                                         return (
                                                             <div key={cur} className="flex items-center gap-1.5 group/total">
                                                                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight w-7 text-right">{cur}</span>
                                                                 <span className={cn(
                                                                     "text-[12px] font-black tracking-tight",
                                                                     amount !== 0
-                                                                        ? (col.id === 'balance' ? 'text-indigo-600' : 'text-slate-900')
+                                                                        ? (col.id === 'advance' ? 'text-amber-600' : col.id === 'debit' || col.id === 'balance' ? 'text-indigo-600' : 'text-slate-900')
                                                                         : 'text-slate-300'
                                                                 )}>
                                                                     {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

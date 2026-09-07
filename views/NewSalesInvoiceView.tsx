@@ -41,6 +41,7 @@ import {
     Receipt,
     Image as ImageIcon
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/shared/Tooltip";
@@ -830,10 +831,9 @@ const NewSalesInvoiceView = () => {
                                                 {options.columnLineNumber && <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">{index + 1}</td>}
                                                 <td className="px-4 py-4">
                                                     <div className="relative group/select">
-                                                        <select
+                                                        <SearchableSelect
                                                             value={item.item}
-                                                            onChange={(e) => {
-                                                                const val = e.target.value;
+                                                            onChange={(val) => {
                                                                 const invItem = inventoryItems.find(i => i.itemName === val);
                                                                 setItems(prev => prev.map(i => i.id === item.id ? {
                                                                     ...i,
@@ -843,13 +843,11 @@ const NewSalesInvoiceView = () => {
                                                                     description: invItem ? (invItem.description || val) : i.description
                                                                 } : i));
                                                             }}
-                                                            className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] outline-none appearance-none cursor-pointer"
-                                                        >
-                                                            <option value="Select Item">Select Item</option>
-                                                            {inventoryItems.map(inv => (
-                                                                <option key={inv.id} value={inv.itemName}>{inv.itemName}</option>
-                                                            ))}
-                                                        </select>
+                                                            options={[
+                                                                { label: 'Select Item', value: 'Select Item' },
+                                                                ...inventoryItems.map(inv => ({ label: inv.itemName, value: inv.itemName }))
+                                                            ]}
+                                                        />
                                                     </div>
                                                 </td>
                                                 {options.columnDescription && (

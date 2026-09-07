@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, X, ArrowLeft, Package, Calendar, DollarSign, ShieldAlert, Database } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { apiService } from '../services/apiService';
 import { InventoryUnitCost, InventoryItem, ItemCategory } from '../types';
 
@@ -205,14 +206,13 @@ const NewInventoryUnitCostView = () => {
                   <Package size={12} />
                   Inventory Item
                 </label>
-                <select
-                  name="itemId"
+                <SearchableSelect
                   value={formData.itemId}
-                  onChange={(e) => {
-                    const item = items.find(i => i.id === e.target.value);
+                  onChange={(val) => {
+                    const item = items.find(i => i.id === val);
                     setFormData(prev => ({ 
                       ...prev, 
-                      itemId: e.target.value,
+                      itemId: val,
                       itemName: item ? `${item.itemCode} - ${item.itemName}` : '',
                       category: item?.category || prev.category
                     }));
@@ -220,16 +220,15 @@ const NewInventoryUnitCostView = () => {
                       setSelectedCategory(item.category);
                     }
                   }}
+                  options={[
+                    { label: 'Select Item...', value: '' },
+                    ...filteredItems.map(item => ({
+                      label: `${item.itemCode} - ${item.itemName} ${item.category ? `(${item.category})` : ''}`,
+                      value: item.id
+                    }))
+                  ]}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium font-bold text-slate-700"
-                  required
-                >
-                  <option value="">Select Item...</option>
-                  {filteredItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.itemCode} - {item.itemName} {item.category ? `(${item.category})` : ''}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
 

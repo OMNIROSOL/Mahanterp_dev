@@ -126,11 +126,11 @@ const ReportsView: React.FC = () => {
       icon: Wallet,
       reports: [
         {
-          title: "Financial Overview",
-          description: "Summary of chart of accounts, bank balances, and financial health.",
+          title: "Summary",
+          description: "Balance sheet and profit and loss from your chart of accounts.",
           icon: Wallet,
-          path: "/accounts",
-          color: "text-purple-600"
+          path: "/summary",
+          color: "text-indigo-600"
         },
         {
           title: "Unrealized Foreign Exchange Gains (Losses)",
