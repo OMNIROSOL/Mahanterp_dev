@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import apiService from '../services/apiService';
 import { SalesOrder, ApprovalRequest, Division, InventoryUnitCost } from '../types';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import Card from '../components/shared/Card';
 import Button from '../components/shared/Button';
 import FormInput from '../components/shared/FormInput';
@@ -763,10 +764,9 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
                                                     {options.columnLineNumber && <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">{index + 1}</td>}
                                                     <td className="px-4 py-4">
                                                         <div className="relative group/select">
-                                                            <select
+                                                            <SearchableSelect
                                                                 value={item.item}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
+                                                                onChange={(val) => {
                                                                     const invItem = inventoryItems.find(i => i.itemName === val);
                                                                     setItems(prev => prev.map(i => i.id === item.id ? {
                                                                         ...i,
@@ -776,13 +776,11 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
                                                                         description: invItem ? (invItem.description || val) : i.description
                                                                     } : i));
                                                                 }}
-                                                                className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] outline-none appearance-none cursor-pointer"
-                                                            >
-                                                                <option value="Select Item">Select Item</option>
-                                                                {dbInventory.map((inv: any) => (
-                                                                    <option key={inv.id} value={inv.itemName}>{inv.itemName}</option>
-                                                                ))}
-                                                            </select>
+                                                                options={[
+                                                                    { label: 'Select Item', value: 'Select Item' },
+                                                                    ...dbInventory.map((inv: any) => ({ label: inv.itemName, value: inv.itemName }))
+                                                                ]}
+                                                            />
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-4">

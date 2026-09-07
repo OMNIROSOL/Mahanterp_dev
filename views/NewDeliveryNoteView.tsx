@@ -5,8 +5,9 @@ import { Customer, InventoryItem, FooterTemplate } from '../types';
 import { 
     Calendar, Clock, MapPin, User, Package, Plus, X, 
     ChevronRight, ChevronDown, Copy, Trash2, Settings, 
-    Image as ImageIcon, CheckCircle2, Save, FileText 
+    Image as ImageIcon, CheckCircle2, Save, FileText, Download 
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 import { convertToInputDate, convertToDisplayDate } from '../utils/dateUtils';
 
@@ -528,16 +529,14 @@ const NewDeliveryNoteView = () => {
                                         <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                                             {options.columnLineNumber && <td className="px-6 py-6 text-xs font-bold text-slate-400 text-center">{index + 1}</td>}
                                             <td className="px-6 py-6">
-                                                <select
+                                                <SearchableSelect
                                                     value={item.item}
-                                                    onChange={(e) => updateItem(item.id, 'item', e.target.value)}
-                                                    className="w-full bg-transparent border-none p-0 text-sm font-bold text-indigo-600 outline-none appearance-none cursor-pointer"
-                                                >
-                                                    <option value="">Select Item...</option>
-                                                    {inventoryItems.map(i => (
-                                                        <option key={i.id} value={i.itemName}>{i.itemName}</option>
-                                                    ))}
-                                                </select>
+                                                    onChange={(val) => updateItem(item.id, 'item', val)}
+                                                    options={[
+                                                        { label: 'Select Item...', value: '' },
+                                                        ...inventoryItems.map(i => ({ label: i.itemName, value: i.itemName }))
+                                                    ]}
+                                                />
                                             </td>
                                             <td className="px-6 py-6">
                                                 <input

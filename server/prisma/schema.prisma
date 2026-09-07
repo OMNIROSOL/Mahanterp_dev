@@ -397,6 +397,36 @@ model roles {
   @@schema("admin")
 }
 
+model ActivityLog {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?   @map("user_id")
+  userName   String?   @map("user_name")
+  userRole   String?   @map("user_role")
+  action     String
+  module     String
+  reference  String?
+  details    String?
+  ipAddress  String?   @map("ip_address")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("activity_logs")
+  @@schema("admin")
+}
+
+model BackupRecord {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  filename    String
+  sizeBytes   BigInt?   @map("size_bytes")
+  status      String    @default("Completed")
+  triggeredBy String?   @map("triggered_by")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("backup_records")
+  @@schema("admin")
+}
+
+
 model SupplierMapping {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   supplierId       String    @map("supplier_id") @db.Uuid

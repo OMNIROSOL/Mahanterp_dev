@@ -15,7 +15,10 @@ import {
   PlusSquare,
   MinusSquare,
   ArrowLeftRight,
-  Wallet
+  Wallet,
+  Receipt,
+  Shield,
+  Activity
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { AppUser } from '../../types';
@@ -126,9 +129,10 @@ const TopMenu: React.FC = () => {
   };
 
   const rawMenuItems = [
+    { label: 'Dashboard', icon: LayoutDashboard, path: '/', id: 'dashboard' },
     {
       label: 'Accounting',
-      icon: LayoutDashboard,
+      icon: Receipt,
       path: '/summary',
       id: 'summary',
       submenu: [
@@ -140,7 +144,6 @@ const TopMenu: React.FC = () => {
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims', icon: Wallet, countKey: 'expenseClaims' },
       ]
     },
-    { label: 'Sales Dashboard', icon: BarChart3, path: '/sales-dashboard', id: 'dashboard' },
     {
       label: 'Master Data',
       icon: Database,
@@ -159,6 +162,7 @@ const TopMenu: React.FC = () => {
       path: '/sales-history',
       id: 'sales-invoices',
       submenu: [
+        { label: 'Sales Dashboard', path: '/sales-dashboard', id: 'sales-dashboard' },
         { label: 'Customers', path: '/customers', id: 'customers' },
         { label: 'Sales History', path: '/sales-history', id: 'sales-invoices' },
         { label: 'Sales Quotes', path: '/sales-quotes', id: 'sales-quotes' },
@@ -206,6 +210,16 @@ const TopMenu: React.FC = () => {
     },
     { label: 'Approvals', icon: CheckCircle, path: '/approvals', id: 'approvals' },
     { label: 'Reports', icon: FileSpreadsheet, path: '/reports', id: 'reports' },
+    {
+      label: 'Admin',
+      icon: Shield,
+      path: '/admin/activity-log',
+      id: 'admin',
+      submenu: [
+        { label: 'Activity Log', path: '/admin/activity-log', id: 'admin-activity', icon: Activity },
+        { label: 'Database Backup', path: '/admin/backup', id: 'admin-backup', icon: Database },
+      ]
+    },
     { label: 'Settings', icon: Settings, path: '/settings', id: 'user-permissions' },
   ];
 

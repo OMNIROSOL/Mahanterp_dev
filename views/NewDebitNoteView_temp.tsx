@@ -655,7 +655,7 @@ const NewCreditNoteView = () => {
                                             </span>
                                         </div>
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Tax Component</span>
+                                            <span>Tax Component {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">{calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="flex justify-end items-center bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 mt-4 h-16 gap-x-6">

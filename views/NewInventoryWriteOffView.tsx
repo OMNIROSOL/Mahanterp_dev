@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, X, FileX, ArrowLeft, Trash2 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import apiService from '../services/apiService';
 import { InventoryWriteOff, Division, InventoryItem, Account } from '../types';
 
@@ -190,20 +191,18 @@ const NewInventoryWriteOffView = () => {
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-end">
               <div className="md:col-span-8 space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Inventory Item</label>
-                <select
-                  name="inventoryItem"
+                <SearchableSelect
                   value={formData.inventoryItem}
-                  onChange={handleItemSelect}
+                  onChange={(val) => handleItemSelect({ target: { value: val } } as any)}
+                  options={[
+                    { label: 'Select Item to Write-off', value: '' },
+                    ...availableItems.map(mi => ({
+                      label: `${mi.itemCode} - ${mi.itemName} (Available: ${mi.qtyOnHand})`,
+                      value: `${mi.itemCode} - ${mi.itemName}`
+                    }))
+                  ]}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium"
-                  required
-                >
-                  <option value="">Select Item to Write-off</option>
-                  {availableItems.map(mi => (
-                    <option key={mi.id} value={`${mi.itemCode} - ${mi.itemName}`}>
-                      {mi.itemCode} - {mi.itemName} (Available: {mi.qtyOnHand})
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="md:col-span-4 space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Quantity</label>

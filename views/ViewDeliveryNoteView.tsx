@@ -138,9 +138,9 @@ const ViewDeliveryNoteView = () => {
                                 try {
                                     await apiService.updateDeliveryNoteStatus(note.id, 'Delivered');
                                     setNote({ ...note, status: 'Delivered' });
-                                } catch (err) {
+                                } catch (err: any) {
                                     console.error('Failed to update status:', err);
-                                    alert('Failed to update status');
+                                    alert(err?.response?.data?.error || err.message || 'Failed to update status');
                                 }
                             }}
                             className="bg-blue-600 border border-blue-700 px-4 py-1.5 text-[12px] font-bold text-white rounded shadow-sm hover:bg-blue-700 flex items-center gap-2 transition-colors"

@@ -51,7 +51,7 @@ pool.on('error', (err) => {
 
 const adapter = new PrismaPg(pool);
 export const prisma = new PrismaClient({ adapter });
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3005;
 
 const formatDate = (date: Date | null | undefined) => {
   if (!date) return '';
@@ -593,7 +593,7 @@ app.get('/api/test-patch-route', (req, res) => {
   res.json({ message: 'PATCH test route is reachable' });
 });
 
-app.get('/api/ping', (req, res) => res.json({ pong: true }));
+app.get('/api/ping', (req, res) => res.json({ pong: "tax-codes-fixed" }));
 
 // Removed duplicate purchase-invoice routes
 app.get('/api/items/:id/locations', async (req, res) => {
@@ -2373,6 +2373,44 @@ app.get('/api/tax-codes', async (req, res) => {
     res.json(codes);
   } catch (err: any) {
     console.error('Fetch tax codes error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tax-codes', async (req, res) => {
+  const { name, rate } = req.body;
+  try {
+    const code = await prisma.tax_codes.create({
+      data: { name, rate: Number(rate) }
+    });
+    res.json(code);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tax-codes/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, rate } = req.body;
+  try {
+    const code = await prisma.tax_codes.update({
+      where: { id },
+      data: { name, rate: Number(rate) }
+    });
+    res.json(code);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tax-codes/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.tax_codes.delete({
+      where: { id }
+    });
+    res.json({ success: true });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -4469,9 +4507,11 @@ app.post('/api/goods-received-notes', async (req, res) => {
         include: { items: true }
       });
 
-      for (const item of grn.items) {
-        if (item.itemId) {
-          await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', grn.id, inventoryLocation, tx);
+      if (grn.status === 'Approved' || grn.status === 'Received') {
+        for (const item of grn.items) {
+          if (item.itemId) {
+            await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', grn.id, inventoryLocation, tx);
+          }
         }
       }
 
@@ -4553,15 +4593,17 @@ app.put('/api/goods-received-notes/:id', async (req, res) => {
       });
 
       if (grn) {
-        for (const item of grn.items) {
-          if (item.itemId) {
-            await tx.item.update({
-              where: { id: item.itemId },
-              data: { qtyOnHand: { decrement: Number(item.qty) } }
-            });
+        if (grn.status === 'Approved' || grn.status === 'Received') {
+          for (const item of grn.items) {
+            if (item.itemId) {
+              await tx.item.update({
+                where: { id: item.itemId },
+                data: { qtyOnHand: { decrement: Number(item.qty) } }
+              });
+            }
           }
+          await tx.stockLedger.deleteMany({ where: { sourceDocumentId: id } });
         }
-        await tx.stockLedger.deleteMany({ where: { sourceDocumentId: id } });
 
         const updatedGrn = await tx.goodsReceivedNote.update({
           where: { id },
@@ -4585,9 +4627,11 @@ app.put('/api/goods-received-notes/:id', async (req, res) => {
           include: { items: true }
         });
 
-        for (const item of updatedGrn.items) {
-          if (item.itemId) {
-            await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', updatedGrn.id, inventoryLocation, tx);
+        if (updatedGrn.status === 'Approved' || updatedGrn.status === 'Received') {
+          for (const item of updatedGrn.items) {
+            if (item.itemId) {
+              await adjustItemInventory(item.itemId, Number(item.qty), 'GRN', updatedGrn.id, inventoryLocation, tx);
+            }
           }
         }
 
@@ -5055,7 +5099,244 @@ app.delete('/api/transaction-items/:id', async (req, res) => {
   }
 });
 
-app.use((req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: ACTIVITY LOGGING MIDDLEWARE
+// Logs every mutating request (POST / PUT / PATCH / DELETE) automatically
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ACTIVITY_MODULE_MAP: Record<string, string> = {
+  'invoices': 'Sales Invoice',
+  'sales-orders': 'Sales Order',
+  'sales-quotes': 'Sales Quote',
+  'delivery-notes': 'Delivery Note',
+  'credit-notes': 'Credit Note',
+  'receipts': 'Receipt',
+  'purchase-orders': 'Purchase Order',
+  'purchase-invoices': 'Purchase Invoice',
+  'purchase-quotes': 'Purchase Enquiry',
+  'goods-received-notes': 'Goods Receipt Note',
+  'payments': 'Payment',
+  'debit-notes': 'Debit Note',
+  'customers': 'Customer',
+  'suppliers': 'Supplier',
+  'inventory-items': 'Inventory Item',
+  'inventory-transfers': 'Inventory Transfer',
+  'inventory-write-offs': 'Inventory Write-off',
+  'accounts': 'Account',
+  'tax-codes': 'Tax Code',
+  'auth': 'Authentication',
+};
+
+function getModuleFromUrl(url: string): string {
+  const parts = url.replace('/api/', '').split('/');
+  const key = parts[0];
+  return ACTIVITY_MODULE_MAP[key] || key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getActionFromMethod(method: string): string {
+  const map: Record<string, string> = { POST: 'CREATE', PUT: 'UPDATE', PATCH: 'UPDATE', DELETE: 'DELETE', GET: 'VIEW' };
+  return map[method] || method;
+}
+
+// Async fire-and-forget logger — never blocks the request
+async function logActivity(req: any, action?: string, module?: string, reference?: string, details?: string) {
+  try {
+    const user = req.user;
+    await (prisma as any).activityLog.create({
+      data: {
+        userId: user?.userId || null,
+        userName: user?.email || 'System',
+        userRole: user?.role || 'Unknown',
+        action: action || getActionFromMethod(req.method),
+        module: module || getModuleFromUrl(req.url),
+        reference: reference || null,
+        details: details || null,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+      }
+    });
+  } catch (_) {
+    // silently ignore log errors — never block the main request
+  }
+}
+
+// Middleware: auto-log all mutating routes
+app.use((req: any, res: any, next: any) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.url.startsWith('/api/')) {
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      if (res.statusCode < 400) {
+        const ref = body?.reference || body?.id || undefined;
+        logActivity(req, getActionFromMethod(req.method), getModuleFromUrl(req.url), ref);
+      }
+      return originalJson(body);
+    };
+  }
+  next();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: ACTIVITY LOGS API
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/admin/activity-logs', async (req: any, res: any) => {
+  try {
+    const { module, action, user, from, to, limit = '200' } = req.query;
+    const where: any = {};
+    if (module) where.module = { contains: module, mode: 'insensitive' };
+    if (action) where.action = action;
+    if (user) where.OR = [
+      { userName: { contains: user, mode: 'insensitive' } },
+      { userRole: { contains: user, mode: 'insensitive' } }
+    ];
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from as string);
+      if (to) where.createdAt.lte = new Date(to as string);
+    }
+    const logs = await (prisma as any).activityLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit as string)
+    });
+    res.json(logs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/activity-logs', async (req: any, res: any) => {
+  try {
+    const { olderThanDays = '90' } = req.query;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - parseInt(olderThanDays as string));
+    const result = await (prisma as any).activityLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    res.json({ deleted: result.count });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: DATABASE BACKUP API
+// ─────────────────────────────────────────────────────────────────────────────
+
+const path = require('path');
+const { mkdirSync, existsSync, statSync, unlinkSync } = require('fs');
+
+const BACKUP_DIR = path.join(__dirname, '..', 'backups');
+try { mkdirSync(BACKUP_DIR, { recursive: true }); } catch (_) {}
+
+function findPgDump(): string {
+  const candidates = [
+    'C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe',
+    'C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe',
+    'C:\\Program Files\\PostgreSQL\\16\\bin\\pg_dump.exe',
+    'C:\\Program Files\\PostgreSQL\\15\\bin\\pg_dump.exe',
+    'pg_dump',
+  ];
+  for (const c of candidates) {
+    if (c === 'pg_dump' || existsSync(c)) return c;
+  }
+  return 'pg_dump';
+}
+
+app.get('/api/admin/backups', async (req: any, res: any) => {
+  try {
+    const records = await (prisma as any).backupRecord.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    
+    // Fix: BigInt cannot be serialized to JSON natively
+    const formattedRecords = records.map((r: any) => ({
+      ...r,
+      sizeBytes: r.sizeBytes ? Number(r.sizeBytes) : null
+    }));
+    
+    res.json(formattedRecords);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/backups', async (req: any, res: any) => {
+  const user = req.user;
+  const triggeredBy = user?.email || 'Manual';
+  const now = new Date();
+  const filename = `backup_${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.dump`;
+  const filePath = path.join(BACKUP_DIR, filename);
+
+  // Create a pending record
+  let record: any;
+  try {
+    record = await (prisma as any).backupRecord.create({
+      data: { filename, status: 'Running', triggeredBy, notes: req.body?.notes || null }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  res.json({ message: 'Backup started', id: record.id, filename });
+
+  // Run pg_dump in the background
+  try {
+    const dbUrl = process.env.DATABASE_URL || '';
+    const match = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
+    if (!match) throw new Error('Cannot parse DATABASE_URL');
+    const [, dbUser, dbPass, dbHost, dbPort, dbName] = match;
+
+    const pgDump = findPgDump();
+    await new Promise<void>((resolve, reject) => {
+      const proc = require('child_process').spawn(pgDump, [
+        '-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', dbName, '-Fc', '-f', filePath
+      ], { env: { ...process.env, PGPASSWORD: dbPass } });
+      proc.on('close', (code: number) => code === 0 ? resolve() : reject(new Error(`pg_dump exited with code ${code}`)));
+    });
+
+    const sizeBytes = statSync(filePath).size;
+    await (prisma as any).backupRecord.update({
+      where: { id: record.id },
+      data: { status: 'Completed', sizeBytes }
+    });
+    logActivity(req, 'BACKUP', 'Database Backup', filename, `Size: ${sizeBytes} bytes`);
+  } catch (err: any) {
+    await (prisma as any).backupRecord.update({
+      where: { id: record.id },
+      data: { status: 'Failed', notes: err.message }
+    }).catch(() => {});
+  }
+});
+
+app.get('/api/admin/backups/:id/download', async (req: any, res: any) => {
+  try {
+    const record = await (prisma as any).backupRecord.findUnique({ where: { id: req.params.id } });
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    
+    const filePath = path.join(BACKUP_DIR, record.filename);
+    if (!existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+
+    res.download(filePath, record.filename);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/backups/:id', async (req: any, res: any) => {
+  try {
+    const record = await (prisma as any).backupRecord.findUnique({ where: { id: req.params.id } });
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    // Delete file if exists
+    try {
+      unlinkSync(path.join(BACKUP_DIR, record.filename));
+    } catch (_) {}
+    await (prisma as any).backupRecord.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.use((req: any, res: any) => {
   console.log(`[404] ${req.method} ${req.url}`);
   res.status(404).json({
     error: 'Route not found',
@@ -5063,7 +5344,6 @@ app.use((req, res) => {
     url: req.url
   });
 });
-
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`🚀 ERP Backend running at http://localhost:${PORT}`);
