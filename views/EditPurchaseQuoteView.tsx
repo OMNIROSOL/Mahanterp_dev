@@ -18,6 +18,7 @@ import {
     Save,
     Package
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 import apiService from '../services/apiService';
 import { PurchaseEnquiry, Supplier, InventoryItem, FooterTemplate } from '../types';
@@ -417,10 +418,9 @@ const EditPurchaseQuoteView = () => {
                                         <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                                             {options.columnLineNumber && <td className="px-6 py-5 text-center text-sm font-bold text-slate-300">{index + 1}</td>}
                                             <td className="px-6 py-5">
-                                                <select
+                                                <SearchableSelect
                                                     value={item.item}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
+                                                    onChange={(val) => {
                                                         const selected = inventoryItems.find(i => i.itemName === val);
                                                         setItems(prev => prev.map(i => i.id === item.id ? {
                                                             ...i,
@@ -429,11 +429,11 @@ const EditPurchaseQuoteView = () => {
                                                             unit: selected ? (selected.unitName || '') : i.unit
                                                         } : i));
                                                     }}
-                                                    className="w-full bg-transparent border-none p-0 text-sm font-black text-indigo-600 outline-none appearance-none cursor-pointer"
-                                                >
-                                                    <option value="Select Item">Select Item</option>
-                                                    {inventoryItems.map(i => <option key={i.id} value={i.itemName}>{i.itemName}</option>)}
-                                                </select>
+                                                    options={[
+                                                        { label: 'Select Item', value: 'Select Item' },
+                                                        ...inventoryItems.map(i => ({ label: i.itemName, value: i.itemName }))
+                                                    ]}
+                                                />
                                             </td>
                                             <td className="px-6 py-5">
                                                 <textarea

@@ -20,9 +20,12 @@ import {
     ChevronUp,
     Hash,
     Briefcase,
-    Settings,
-    MapPin
+    Building2,
+    Truck,
+    MapPin,
+    Settings
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 
 const InputField = ({ label, value, onChange, placeholder, type = "text", Icon, error, readOnly }: any) => (
@@ -478,21 +481,18 @@ const NewGoodsReceiptView = () => {
                                             <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                                                 {options.lineNumber && <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">{index + 1}</td>}
                                                 <td className="px-4 py-4">
-                                                    <select
+                                                    <SearchableSelect
                                                         value={item.item}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
+                                                        onChange={(val) => {
                                                             const selectedDbItem = dbItems.find(it => it.itemName === val);
                                                             const newDesc = selectedDbItem?.description || '';
                                                             setItems(prev => prev.map(i => i.id === item.id ? { ...i, item: val, description: newDesc } : i));
                                                         }}
-                                                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] outline-none appearance-none cursor-pointer"
-                                                    >
-                                                        <option value="">Select Item</option>
-                                                        {dbItems.map(it => (
-                                                            <option key={it.id} value={it.itemName}>{it.itemName}</option>
-                                                        ))}
-                                                    </select>
+                                                        options={[
+                                                            { label: 'Select Item', value: '' },
+                                                            ...dbItems.map(it => ({ label: it.itemName, value: it.itemName }))
+                                                        ]}
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-4">
                                                     <input

@@ -161,6 +161,9 @@ import ExpenseItemsView from './views/master/ExpenseItemsView';
 
 
 import LoginView from './views/LoginView';
+import DashboardView from './views/DashboardView';
+import AdminBackupView from './views/AdminBackupView';
+import AdminActivityLogView from './views/AdminActivityLogView';
 import { Navigate } from 'react-router-dom';
 
 // Not Found Component
@@ -194,9 +197,14 @@ const App = () => {
         {/* Main Layout Route with Nested Routes */}
         <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
           {/* Dashboard Routes */}
-          <Route path="/" element={<SummaryView />} />
+          <Route path="/" element={<DashboardView />} />
           <Route path="/summary" element={<SummaryView />} />
           <Route path="/sales-dashboard" element={<SalesDashboard />} />
+          {/* Admin Routes */}
+          <Route path="/admin/activity-log" element={<AdminActivityLogView />} />
+          <Route path="/admin/backup" element={<AdminBackupView />} />
+
+          {/* Reports Routes */}
           <Route path="/reports" element={<ReportsView />} />
           <Route path="/reports/unrealized-fx" element={<UnrealizedFxGainsView />} />
           <Route path="/reports/aged-receivables" element={<AgedReceivablesView />} />

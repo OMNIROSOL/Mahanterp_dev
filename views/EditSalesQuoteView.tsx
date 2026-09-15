@@ -39,6 +39,7 @@ import {
     Briefcase,
     Image as ImageIcon
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/shared/Tooltip";
@@ -810,10 +811,9 @@ const EditSalesQuoteView = () => {
                                                     {options.columnLineNumber && <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">{index + 1}</td>}
                                                     <td className="px-4 py-4">
                                                         <div className="relative group/select">
-                                                            <select
+                                                            <SearchableSelect
                                                                 value={item.item}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
+                                                                onChange={(val) => {
                                                                     const invItem = inventoryMap[val];
                                                                     setItems(prev => prev.map(i => i.id === item.id ? {
                                                                         ...i,
@@ -824,13 +824,11 @@ const EditSalesQuoteView = () => {
                                                                         unit: invItem ? (invItem.unitName || 'Pcs') : i.unit
                                                                     } : i));
                                                                 }}
-                                                                className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] outline-none appearance-none cursor-pointer"
-                                                            >
-                                                                <option value="Select Item">Select Item</option>
-                                                                {inventoryItems.map(inv => (
-                                                                    <option key={inv.id} value={inv.itemName}>{inv.itemName}</option>
-                                                                ))}
-                                                            </select>
+                                                                options={[
+                                                                    { label: 'Select Item', value: 'Select Item' },
+                                                                    ...inventoryItems.map(inv => ({ label: inv.itemName, value: inv.itemName }))
+                                                                ]}
+                                                            />
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-4">
@@ -1021,7 +1019,7 @@ const EditSalesQuoteView = () => {
                                             </span>
                                         </div>
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Tax Component</span>
+                                            <span>Tax Component {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">{calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="flex justify-end items-center bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 mt-4 h-16 gap-x-6">

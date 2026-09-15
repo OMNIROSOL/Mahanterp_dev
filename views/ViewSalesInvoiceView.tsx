@@ -97,9 +97,10 @@ const ViewSalesInvoiceView = () => {
             const lineTotal = qty * price;
             
             let taxRate = 0;
-            const itemTaxCode = (item.taxCode || '').toString().toLowerCase().trim();
+            const itemTaxCode = (item.taxCode || item.tax_codes?.name || '').toString().toLowerCase().trim();
+            const itemTaxId = item.tax_code_id || item.taxCode;
             const selectedTax = taxCodes.find(tc => 
-                tc.id === item.taxCode || 
+                tc.id === itemTaxId || 
                 tc.name.toLowerCase() === itemTaxCode ||
                 (itemTaxCode === 'zero rated' && tc.name === 'Zero Rated') ||
                 (itemTaxCode === 'exempt' && tc.name === 'Exempt')
@@ -586,7 +587,7 @@ const ViewSalesInvoiceView = () => {
                                 <span className="font-semibold">{totals.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between items-center text-gray-500">
-                                <span className="text-[11px] font-bold uppercase tracking-widest">Tax Component</span>
+                                <span className="text-[11px] font-bold uppercase tracking-widest">Tax Component {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                 <span className="font-semibold">{totals.tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between items-center bg-slate-50 p-4 border-t-2 border-slate-900 mt-2 print-bg-slate-50">

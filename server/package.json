@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node index.ts",
-    "start": "node index.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
     "clear-transactions": "ts-node clear-transactions.ts"
   },
   "keywords": [],
@@ -37,6 +38,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/supertest": "^7.2.0",
     "jest": "^30.4.2",
+    "prisma": "^7.8.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.11",
     "ts-node": "^10.9.2",

@@ -7,8 +7,9 @@ import {
     Copy, X, Plus, Calendar, Hash, User, Briefcase,
     Landmark, CreditCard, Trash2, Save, Undo2,
     CheckCircle2, Info, Image as ImageIcon, Download,
-    ChevronUp, Settings
+    ChevronUp, Settings, CheckSquare, Eye
 } from 'lucide-react';
+import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -946,16 +947,14 @@ const NewReceiptView = () => {
                                             {options.lineNumber && <td className="px-4 py-4 text-xs font-black text-slate-400 text-center">{index + 1}</td>}
                                             <td className="px-4 py-4">
                                                 <div className="relative">
-                                                    <select
+                                                    <SearchableSelect
                                                         value={item.item}
-                                                        onChange={(e) => updateItem(item.id, 'item', e.target.value)}
-                                                        className="w-full bg-transparent border-none p-0 text-[13px] font-bold text-indigo-600 outline-none appearance-none cursor-pointer"
-                                                    >
-                                                        <option value="">Select Item...</option>
-                                                        {incomeItems.map(inc => (
-                                                            <option key={inc.id} value={inc.name}>{inc.name}</option>
-                                                        ))}
-                                                    </select>
+                                                        onChange={(val) => updateItem(item.id, 'item', val)}
+                                                        options={[
+                                                            { label: 'Select Item...', value: '' },
+                                                            ...incomeItems.map(inc => ({ label: inc.name, value: inc.name }))
+                                                        ]}
+                                                    />
                                                 </div>
                                             </td>
                                             <td className="px-4 py-4">

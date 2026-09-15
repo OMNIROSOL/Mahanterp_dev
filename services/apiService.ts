@@ -226,6 +226,7 @@ export const apiService = {
     { id: 'payments', name: 'Payments', category: 'Accounting & Finance' },
     { id: 'inter-account-transfers', name: 'Inter Account Transfers', category: 'Accounting & Finance' },
     { id: 'expense-claims', name: 'Expense Claims', category: 'Accounting & Finance' },
+    { id: 'expense-claim-payers', name: 'Expense Claim Payers', category: 'Accounting & Finance' },
 
     // Sales & CRM
     { id: 'customers', name: 'Customers Directory', category: 'Sales & CRM' },
@@ -234,6 +235,7 @@ export const apiService = {
     { id: 'delivery-notes', name: 'Delivery Notes', category: 'Sales & CRM' },
     { id: 'sales-invoices', name: 'Sales Invoices', category: 'Sales & CRM' },
     { id: 'credit-notes', name: 'Credit Notes', category: 'Sales & CRM' },
+    { id: 'sales-history', name: 'Sales History', category: 'Sales & CRM' },
 
     // Purchasing & Procurement
     { id: 'suppliers', name: 'Suppliers Directory', category: 'Procurement & Purchasing' },
@@ -250,6 +252,7 @@ export const apiService = {
     { id: 'consumption-dashboard', name: 'Consumption Dashboard', category: 'Procurement & Purchasing' },
     { id: 'costing-report', name: 'Costing Sheet & Report', category: 'Procurement & Purchasing' },
     { id: 'purchase-planning', name: 'Purchase Planning', category: 'Procurement & Purchasing' },
+    { id: 'supplier-catalog', name: 'Supplier Catalog Setup', category: 'Procurement & Purchasing' },
 
     // Inventory Management
     { id: 'inventory-items', name: 'Inventory Items', category: 'Inventory Management' },
@@ -259,6 +262,8 @@ export const apiService = {
     { id: 'inventory-unit-costs', name: 'Inventory Unit Costs', category: 'Inventory Management' },
     { id: 'units', name: 'Units of Measure', category: 'Inventory Management' },
     { id: 'categories', name: 'Item Categories', category: 'Inventory Management' },
+    { id: 'income-items', name: 'Income Items', category: 'Inventory Management' },
+    { id: 'expense-items', name: 'Expense Items', category: 'Inventory Management' },
 
     // Approvals & Workflows
     { id: 'approvals', name: 'Approvals Center', category: 'Approvals & Workflows' },
@@ -272,7 +277,9 @@ export const apiService = {
     { id: 'tax-codes', name: 'Tax Codes & Rates', category: 'Settings & Master Data' },
     { id: 'withholding-tax', name: 'Withholding Tax Rates', category: 'Settings & Master Data' },
     { id: 'user-permissions', name: 'Users & Permissions', category: 'Settings & Master Data' },
-    { id: 'role-management', name: 'Role Management & Definitions', category: 'Settings & Master Data' }
+    { id: 'role-management', name: 'Role Management & Definitions', category: 'Settings & Master Data' },
+    { id: 'currencies', name: 'Currencies', category: 'Settings & Master Data' },
+    { id: 'exchange-rates', name: 'Exchange Rates', category: 'Settings & Master Data' }
   ]),
 
   // Users & Session
