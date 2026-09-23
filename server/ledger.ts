@@ -2,7 +2,10 @@
  * General ledger posting for the ERP.
  * Documents write balanced Debit + Credit rows; Summary / Trial Balance
  * recalculate from these lines. Edit/delete clears by source_document_id then re-posts.
+ * Debit/Credit are always base currency (ZMW). Foreign amounts stay on the line.
  */
+
+import { BASE_CURRENCY, documentFx, ensureMultiCurrencyColumns } from './currency';
 
 export const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -43,6 +46,7 @@ export async function ensureAllocationTables(db: any) {
   } catch (err) {
     console.error('[ledger] could not ensure allocation tables', err);
   }
+  await ensureMultiCurrencyColumns(db);
 }
 
 export async function listReceiptAllocations(db: any, receiptId?: string, invoiceId?: string) {
@@ -85,9 +89,13 @@ export type JournalLine = {
   accountId: string;
   debit?: number;
   credit?: number;
+  foreignDebit?: number;
+  foreignCredit?: number;
+  currency?: string;
+  exchangeRate?: number;
 };
 
-export type ControlKey = 'AR' | 'AP' | 'SALES' | 'INVENTORY' | 'SUSPENSE' | 'EXPENSE_CLAIMS' | 'CUSTOMER_ADVANCES' | 'SUPPLIER_PREPAYMENTS';
+export type ControlKey = 'AR' | 'AP' | 'SALES' | 'INVENTORY' | 'SUSPENSE' | 'EXPENSE_CLAIMS' | 'CUSTOMER_ADVANCES' | 'SUPPLIER_PREPAYMENTS' | 'FX';
 
 const CONTROL: Record<ControlKey, { names: string[]; code: string; type: string; payment?: boolean }> = {
   AR: { names: ['Accounts Receivable', 'Trade Receivables'], code: '1100', type: 'Asset' },
@@ -98,7 +106,47 @@ const CONTROL: Record<ControlKey, { names: string[]; code: string; type: string;
   EXPENSE_CLAIMS: { names: ['Expense Claims Payable'], code: 'LIAB-EXP-CLAIMS', type: 'Liability' },
   CUSTOMER_ADVANCES: { names: ['Customer advances', 'Customer Advances', 'Customer deposits'], code: '2200', type: 'Liability' },
   SUPPLIER_PREPAYMENTS: { names: ['Supplier prepayments', 'Prepaid to suppliers'], code: '1300', type: 'Asset' },
+  FX: { names: ['Foreign Exchange Gains and Losses', 'Realized FX Gain/Loss', 'Exchange Gains/Losses'], code: 'FXGL', type: 'Expense' },
 };
+
+function fxLine(
+  accountId: string,
+  side: 'debit' | 'credit',
+  foreignAmount: number,
+  currency: string,
+  rate: number
+): JournalLine {
+  const foreign = round2(foreignAmount);
+  const base = round2(foreign * (currency === BASE_CURRENCY ? 1 : rate));
+  if (side === 'debit') {
+    return { accountId, debit: base, credit: 0, foreignDebit: foreign, foreignCredit: 0, currency, exchangeRate: rate };
+  }
+  return { accountId, debit: 0, credit: base, foreignDebit: 0, foreignCredit: foreign, currency, exchangeRate: rate };
+}
+
+async function realizedFxForAllocations(
+  db: any,
+  allocations: { invoiceId: string; amount: number }[] | undefined,
+  settlementRate: number,
+  kind: 'payment' | 'receipt'
+) {
+  let bookedBase = 0;
+  let settlementBase = 0;
+  let fc = 0;
+  for (const a of allocations || []) {
+    const amt = round2(Number(a.amount || 0));
+    if (!a.invoiceId || amt <= 0) continue;
+    const inv = kind === 'payment'
+      ? await db.invoices.findUnique({ where: { id: a.invoiceId } }).catch(() => null)
+      : await db.invoice.findUnique({ where: { id: a.invoiceId } }).catch(() => null);
+    if (!inv) continue;
+    const { rate } = documentFx(inv);
+    bookedBase = round2(bookedBase + amt * rate);
+    settlementBase = round2(settlementBase + amt * settlementRate);
+    fc = round2(fc + amt);
+  }
+  return { bookedBase, settlementBase, fc, fxBase: round2(settlementBase - bookedBase) };
+}
 
 export function signedBalance(accountType: string, debit: number, credit: number) {
   if (['Asset', 'Expense'].includes(accountType)) return round2(debit - credit);
@@ -108,8 +156,8 @@ export function signedBalance(accountType: string, debit: number, credit: number
 export async function customersMoneyPositions(db: any, customers: { id: string; name: string }[]) {
   await ensureAllocationTables(db);
   const [invoices, receipts, allocRows] = await Promise.all([
-    db.invoice.findMany({ select: { customerId: true, balanceDue: true, grandTotal: true } }),
-    db.receipt.findMany({ select: { id: true, paidByContact: true, amount: true } }),
+    db.invoice.findMany({ select: { customerId: true, balanceDue: true, grandTotal: true, currency: true, exchangeRate: true, docOptions: true } }),
+    db.receipt.findMany({ select: { id: true, paidByContact: true, amount: true, currency: true, exchangeRate: true } }),
     db.$queryRawUnsafe(`SELECT receipt_id AS "receiptId", amount FROM sales.receipt_allocations`).catch(() => []),
   ]);
 
@@ -120,33 +168,49 @@ export async function customersMoneyPositions(db: any, customers: { id: string; 
   }
 
   const debitByCustomer: Record<string, number> = {};
+  const debitBaseByCustomer: Record<string, number> = {};
   for (const invoice of invoices || []) {
     const due = Math.max(0, Number(invoice.balanceDue ?? invoice.grandTotal ?? 0));
+    const { rate } = documentFx(invoice);
     debitByCustomer[invoice.customerId] = round2((debitByCustomer[invoice.customerId] || 0) + due);
+    debitBaseByCustomer[invoice.customerId] = round2((debitBaseByCustomer[invoice.customerId] || 0) + due * rate);
   }
 
-  const byId: Record<string, { debit: number; advance: number; balance: number }> = {};
+  const byId: Record<string, { debit: number; debitBase: number; advance: number; advanceBase: number; balance: number; balanceBase: number }> = {};
   for (const customer of customers) {
     const debit = debitByCustomer[customer.id] || 0;
+    const debitBase = debitBaseByCustomer[customer.id] || 0;
     const theirs = (receipts || []).filter((r: any) => r.paidByContact === customer.name);
     const received = theirs.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
     const allocated = theirs.reduce((sum: number, r: any) => sum + (allocatedByReceipt[r.id] || 0), 0);
     const advance = round2(Math.max(0, received - allocated));
-    byId[customer.id] = { debit, advance, balance: round2(debit - advance) };
+    const advanceBase = round2(theirs.reduce((sum: number, r: any) => {
+      const { rate } = documentFx(r);
+      const free = Math.max(0, Number(r.amount || 0) - (allocatedByReceipt[r.id] || 0));
+      return sum + free * rate;
+    }, 0));
+    byId[customer.id] = {
+      debit,
+      debitBase,
+      advance,
+      advanceBase,
+      balance: round2(debit - advance),
+      balanceBase: round2(debitBase - advanceBase),
+    };
   }
   return byId;
 }
 
 export async function customerMoneyPosition(db: any, customer: { id: string; name: string }) {
   const map = await customersMoneyPositions(db, [customer]);
-  return map[customer.id] || { debit: 0, advance: 0, balance: 0 };
+  return map[customer.id] || { debit: 0, debitBase: 0, advance: 0, advanceBase: 0, balance: 0, balanceBase: 0 };
 }
 
 export async function suppliersMoneyPositions(db: any, suppliers: { id: string; name: string }[]) {
   await ensureAllocationTables(db);
   const [invoices, payments, allocByInvoice, allocByPayment] = await Promise.all([
-    db.invoices.findMany({ select: { id: true, supplier_id: true, grand_total: true } }),
-    db.payment.findMany({ select: { id: true, paidToContact: true, amount: true } }),
+    db.invoices.findMany({ select: { id: true, supplier_id: true, grand_total: true, currency: true, exchangeRate: true, docOptions: true } }),
+    db.payment.findMany({ select: { id: true, paidToContact: true, amount: true, currency: true, exchangeRate: true } }),
     db.$queryRawUnsafe(
       `SELECT invoice_id AS "invoiceId", COALESCE(SUM(amount), 0) AS amount
        FROM finance.payment_allocations GROUP BY invoice_id`
@@ -167,26 +231,42 @@ export async function suppliersMoneyPositions(db: any, suppliers: { id: string; 
   }
 
   const debitBySupplier: Record<string, number> = {};
+  const debitBaseBySupplier: Record<string, number> = {};
   for (const invoice of invoices || []) {
     const due = Math.max(0, Number(invoice.grand_total || 0) - (paidByInvoice[invoice.id] || 0));
+    const { rate } = documentFx(invoice);
     debitBySupplier[invoice.supplier_id] = round2((debitBySupplier[invoice.supplier_id] || 0) + due);
+    debitBaseBySupplier[invoice.supplier_id] = round2((debitBaseBySupplier[invoice.supplier_id] || 0) + due * rate);
   }
 
-  const byId: Record<string, { debit: number; advance: number; balance: number }> = {};
+  const byId: Record<string, { debit: number; debitBase: number; advance: number; advanceBase: number; balance: number; balanceBase: number }> = {};
   for (const supplier of suppliers) {
     const debit = debitBySupplier[supplier.id] || 0;
+    const debitBase = debitBaseBySupplier[supplier.id] || 0;
     const theirs = (payments || []).filter((p: any) => p.paidToContact === supplier.name);
     const paidOut = theirs.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
     const allocated = theirs.reduce((sum: number, p: any) => sum + (allocatedByPayment[p.id] || 0), 0);
     const advance = round2(Math.max(0, paidOut - allocated));
-    byId[supplier.id] = { debit, advance, balance: round2(debit - advance) };
+    const advanceBase = round2(theirs.reduce((sum: number, p: any) => {
+      const { rate } = documentFx(p);
+      const free = Math.max(0, Number(p.amount || 0) - (allocatedByPayment[p.id] || 0));
+      return sum + free * rate;
+    }, 0));
+    byId[supplier.id] = {
+      debit,
+      debitBase,
+      advance,
+      advanceBase,
+      balance: round2(debit - advance),
+      balanceBase: round2(debitBase - advanceBase),
+    };
   }
   return byId;
 }
 
 export async function supplierMoneyPosition(db: any, supplier: { id: string; name: string }) {
   const map = await suppliersMoneyPositions(db, [supplier]);
-  return map[supplier.id] || { debit: 0, advance: 0, balance: 0 };
+  return map[supplier.id] || { debit: 0, debitBase: 0, advance: 0, advanceBase: 0, balance: 0, balanceBase: 0 };
 }
 
 export async function getControlAccount(db: any, key: ControlKey) {
@@ -206,6 +286,7 @@ export async function getControlAccount(db: any, key: ControlKey) {
       code: spec.code,
       accountType: spec.type,
       isPaymentAccount: spec.payment || false,
+      currency: BASE_CURRENCY,
     },
   });
 }
@@ -246,6 +327,7 @@ export async function postJournal(
     lines: JournalLine[];
   }
 ) {
+  await ensureMultiCurrencyColumns(db);
   await reverseJournal(db, opts.sourceDocumentId);
 
   const lines = (opts.lines || [])
@@ -253,6 +335,10 @@ export async function postJournal(
       accountId: l.accountId,
       debit: round2(l.debit || 0),
       credit: round2(l.credit || 0),
+      foreignDebit: round2(l.foreignDebit || 0),
+      foreignCredit: round2(l.foreignCredit || 0),
+      currency: l.currency || BASE_CURRENCY,
+      exchangeRate: Number(l.exchangeRate) || 1,
     }))
     .filter((l) => l.accountId && (l.debit > 0.0001 || l.credit > 0.0001));
 
@@ -264,7 +350,6 @@ export async function postJournal(
     throw new Error(`Unbalanced journal (${opts.transactionType}): Dr ${debit.toFixed(2)} Cr ${credit.toFixed(2)}`);
   }
 
-  // Absorb rounding leftover on the last credit or debit line
   const drift = round2(debit - credit);
   if (Math.abs(drift) > 0 && Math.abs(drift) <= 0.05) {
     const last = lines[lines.length - 1];
@@ -278,6 +363,10 @@ export async function postJournal(
       transactionDate: opts.date || new Date(),
       debit: l.debit,
       credit: l.credit,
+      currency: l.currency,
+      exchangeRate: l.exchangeRate,
+      foreignDebit: l.foreignDebit,
+      foreignCredit: l.foreignCredit,
       transactionType: opts.transactionType,
       source_document_id: opts.sourceDocumentId,
     })),
@@ -307,11 +396,12 @@ export async function postSalesInvoice(db: any, invoice: any) {
     await reverseJournal(db, invoice.id);
     return;
   }
+  const { currency, rate } = documentFx(invoice);
   const ar = await getControlAccount(db, 'AR');
   const sales = await getControlAccount(db, 'SALES');
   const lines: JournalLine[] = [
-    { accountId: ar.id, debit: amount },
-    { accountId: sales.id, credit: amount },
+    fxLine(ar.id, 'debit', amount, currency, rate),
+    fxLine(sales.id, 'credit', amount, currency, rate),
   ];
 
   let customer = invoice.customer;
@@ -340,8 +430,8 @@ export async function postSalesInvoice(db: any, invoice: any) {
     }
     if (appliedAdvance > 0.01) {
       const advances = await getControlAccount(db, 'CUSTOMER_ADVANCES');
-      lines.push({ accountId: advances.id, debit: appliedAdvance });
-      lines.push({ accountId: ar.id, credit: appliedAdvance });
+      lines.push(fxLine(advances.id, 'debit', appliedAdvance, currency, rate));
+      lines.push(fxLine(ar.id, 'credit', appliedAdvance, currency, rate));
       await db.invoice.update({
         where: { id: invoice.id },
         data: {
@@ -361,6 +451,7 @@ export async function postSalesInvoice(db: any, invoice: any) {
 }
 
 export async function postPurchaseInvoice(db: any, invoice: any) {
+  const { currency, rate } = documentFx(invoice);
   const items = invoice.items || [];
   const lines: JournalLine[] = [];
   let debitTotal = 0;
@@ -368,7 +459,7 @@ export async function postPurchaseInvoice(db: any, invoice: any) {
     const amt = lineAmount(item);
     if (amt <= 0) continue;
     const acc = await resolveAccount(db, item.account || 'Inventory');
-    lines.push({ accountId: acc.id, debit: amt });
+    lines.push(fxLine(acc.id, 'debit', amt, currency, rate));
     debitTotal = round2(debitTotal + amt);
   }
   const amount = round2(Number(invoice.grand_total || invoice.grandTotal || debitTotal || 0));
@@ -378,12 +469,12 @@ export async function postPurchaseInvoice(db: any, invoice: any) {
   }
   if (!lines.length) {
     const inventory = await getControlAccount(db, 'INVENTORY');
-    lines.push({ accountId: inventory.id, debit: amount });
+    lines.push(fxLine(inventory.id, 'debit', amount, currency, rate));
     debitTotal = amount;
   }
   const ap = await getControlAccount(db, 'AP');
   const creditAmt = debitTotal || amount;
-  lines.push({ accountId: ap.id, credit: creditAmt });
+  lines.push(fxLine(ap.id, 'credit', creditAmt, currency, rate));
 
   let supplier = invoice.suppliers;
   if (!supplier && invoice.supplier_id) {
@@ -411,8 +502,8 @@ export async function postPurchaseInvoice(db: any, invoice: any) {
     }
     if (appliedAdvance > 0.01) {
       const prepayments = await getControlAccount(db, 'SUPPLIER_PREPAYMENTS');
-      lines.push({ accountId: ap.id, debit: appliedAdvance });
-      lines.push({ accountId: prepayments.id, credit: appliedAdvance });
+      lines.push(fxLine(ap.id, 'debit', appliedAdvance, currency, rate));
+      lines.push(fxLine(prepayments.id, 'credit', appliedAdvance, currency, rate));
     }
   }
 
@@ -489,9 +580,11 @@ async function autoAllocateSalesInvoices(db: any, customerName: string, amount: 
 }
 
 export async function postReceipt(db: any, receipt: any, allocations?: { invoiceId: string; amount: number }[]) {
+  const { currency, rate } = documentFx(receipt);
   const items = Array.isArray(receipt.items) ? receipt.items : [];
   const bank = await resolveAccount(db, receipt.receivedInAccount);
   const ar = await getControlAccount(db, 'AR');
+  const fxAcc = await getControlAccount(db, 'FX');
   const lines: JournalLine[] = [];
   let creditTotal = 0;
   let arCredit = 0;
@@ -500,11 +593,13 @@ export async function postReceipt(db: any, receipt: any, allocations?: { invoice
     const amt = lineAmount(item);
     if (amt <= 0) continue;
     const acc = await resolveAccount(db, item.account);
-    lines.push({ accountId: acc.id, credit: amt });
-    creditTotal = round2(creditTotal + amt);
-    if (acc.id === ar.id || (item.account || '').toLowerCase().includes('receivable')) {
+    const isAr = acc.id === ar.id || (item.account || '').toLowerCase().includes('receivable');
+    if (isAr) {
       arCredit = round2(arCredit + amt);
+    } else {
+      lines.push(fxLine(acc.id, 'credit', amt, currency, rate));
     }
+    creditTotal = round2(creditTotal + amt);
   }
 
   const amount = round2(Number(receipt.amount || creditTotal || 0));
@@ -514,13 +609,35 @@ export async function postReceipt(db: any, receipt: any, allocations?: { invoice
     return;
   }
 
-  if (!lines.length) {
-    lines.push({ accountId: ar.id, credit: amount });
+  if (!creditTotal) {
     creditTotal = amount;
     arCredit = amount;
   }
+  if (!arCredit && !lines.length) {
+    arCredit = amount;
+  }
 
-  lines.unshift({ accountId: bank.id, debit: creditTotal || amount });
+  await reverseReceiptAllocations(db, receipt.id);
+  let toApply = allocations;
+  if (!toApply || !toApply.length) {
+    toApply = await autoAllocateSalesInvoices(db, receipt.paidByContact, arCredit);
+  }
+  const fxInfo = await realizedFxForAllocations(db, toApply, rate, 'receipt');
+  const unallocated = round2(Math.max(0, arCredit - fxInfo.fc));
+
+  if (fxInfo.fc > 0.01) {
+    lines.push(fxLine(ar.id, 'credit', fxInfo.fc, currency, fxInfo.bookedBase / fxInfo.fc));
+  }
+  if (unallocated > 0.01) {
+    lines.push(fxLine(ar.id, 'credit', unallocated, currency, rate));
+  }
+  if (fxInfo.fxBase > 0.01) {
+    lines.push(fxLine(fxAcc.id, 'credit', fxInfo.fxBase, BASE_CURRENCY, 1));
+  } else if (fxInfo.fxBase < -0.01) {
+    lines.push(fxLine(fxAcc.id, 'debit', Math.abs(fxInfo.fxBase), BASE_CURRENCY, 1));
+  }
+
+  lines.unshift(fxLine(bank.id, 'debit', creditTotal || amount, currency, rate));
 
   await postJournal(db, {
     sourceDocumentId: receipt.id,
@@ -529,11 +646,6 @@ export async function postReceipt(db: any, receipt: any, allocations?: { invoice
     lines,
   });
 
-  await reverseReceiptAllocations(db, receipt.id);
-  let toApply = allocations;
-  if (!toApply || !toApply.length) {
-    toApply = await autoAllocateSalesInvoices(db, receipt.paidByContact, arCredit);
-  }
   await applyReceiptAllocations(db, receipt.id, toApply);
 }
 
@@ -615,9 +727,11 @@ async function autoAllocatePurchaseInvoices(db: any, supplierName: string, amoun
 }
 
 export async function postPayment(db: any, payment: any, allocations?: { invoiceId: string; amount: number }[]) {
+  const { currency, rate } = documentFx(payment);
   const items = Array.isArray(payment.items) ? payment.items : [];
   const bank = await resolveAccount(db, payment.paidFromAccount);
   const ap = await getControlAccount(db, 'AP');
+  const fxAcc = await getControlAccount(db, 'FX');
   const lines: JournalLine[] = [];
   let debitTotal = 0;
   let apDebit = 0;
@@ -626,11 +740,13 @@ export async function postPayment(db: any, payment: any, allocations?: { invoice
     const amt = lineAmount(item);
     if (amt <= 0) continue;
     const acc = await resolveAccount(db, item.account);
-    lines.push({ accountId: acc.id, debit: amt });
-    debitTotal = round2(debitTotal + amt);
-    if (acc.id === ap.id || (item.account || '').toLowerCase().includes('payable')) {
+    const isAp = acc.id === ap.id || (item.account || '').toLowerCase().includes('payable');
+    if (isAp) {
       apDebit = round2(apDebit + amt);
+    } else {
+      lines.push(fxLine(acc.id, 'debit', amt, currency, rate));
     }
+    debitTotal = round2(debitTotal + amt);
   }
 
   const amount = round2(Number(payment.amount || debitTotal || 0));
@@ -640,13 +756,35 @@ export async function postPayment(db: any, payment: any, allocations?: { invoice
     return;
   }
 
-  if (!lines.length) {
-    lines.push({ accountId: ap.id, debit: amount });
+  if (!debitTotal) {
     debitTotal = amount;
     apDebit = amount;
   }
+  if (!apDebit && !lines.length) {
+    apDebit = amount;
+  }
 
-  lines.push({ accountId: bank.id, credit: debitTotal || amount });
+  await reversePaymentAllocations(db, payment.id);
+  let toApply = allocations;
+  if (!toApply || !toApply.length) {
+    toApply = await autoAllocatePurchaseInvoices(db, payment.paidToContact, apDebit);
+  }
+  const fxInfo = await realizedFxForAllocations(db, toApply, rate, 'payment');
+  const unallocated = round2(Math.max(0, apDebit - fxInfo.fc));
+
+  if (fxInfo.fc > 0.01) {
+    lines.push(fxLine(ap.id, 'debit', fxInfo.fc, currency, fxInfo.bookedBase / fxInfo.fc));
+  }
+  if (unallocated > 0.01) {
+    lines.push(fxLine(ap.id, 'debit', unallocated, currency, rate));
+  }
+  if (fxInfo.fxBase > 0.01) {
+    lines.push(fxLine(fxAcc.id, 'debit', fxInfo.fxBase, BASE_CURRENCY, 1));
+  } else if (fxInfo.fxBase < -0.01) {
+    lines.push(fxLine(fxAcc.id, 'credit', Math.abs(fxInfo.fxBase), BASE_CURRENCY, 1));
+  }
+
+  lines.push(fxLine(bank.id, 'credit', debitTotal || amount, currency, rate));
 
   await postJournal(db, {
     sourceDocumentId: payment.id,
@@ -655,11 +793,6 @@ export async function postPayment(db: any, payment: any, allocations?: { invoice
     lines,
   });
 
-  await reversePaymentAllocations(db, payment.id);
-  let toApply = allocations;
-  if (!toApply || !toApply.length) {
-    toApply = await autoAllocatePurchaseInvoices(db, payment.paidToContact, apDebit);
-  }
   await applyPaymentAllocations(db, payment.id, toApply);
 }
 
@@ -669,6 +802,7 @@ export async function postTransfer(db: any, transfer: any) {
     await reverseJournal(db, transfer.id);
     return;
   }
+  const { currency, rate } = documentFx(transfer);
   const from = await resolveAccount(db, transfer.paidFromAccount);
   const to = await resolveAccount(db, transfer.receivedInAccount);
   await postJournal(db, {
@@ -676,13 +810,14 @@ export async function postTransfer(db: any, transfer: any) {
     transactionType: `Inter Account Transfer ${transfer.reference || ''}`.trim(),
     date: transfer.date || new Date(),
     lines: [
-      { accountId: from.id, credit: amount },
-      { accountId: to.id, debit: amount },
+      fxLine(from.id, 'credit', amount, currency, rate),
+      fxLine(to.id, 'debit', amount, currency, rate),
     ],
   });
 }
 
 export async function postExpenseClaim(db: any, claim: any) {
+  const { currency, rate } = documentFx(claim);
   const items = claim.items || [];
   const lines: JournalLine[] = [];
   let total = 0;
@@ -694,7 +829,7 @@ export async function postExpenseClaim(db: any, claim: any) {
     const lineTotal = round2(qty * price + (claim.amountsAreTaxInclusive ? 0 : tax));
     if (lineTotal <= 0) continue;
     const acc = await resolveAccount(db, item.accountId || item.account);
-    lines.push({ accountId: acc.id, debit: lineTotal });
+    lines.push(fxLine(acc.id, 'debit', lineTotal, currency, rate));
     total = round2(total + lineTotal);
   }
   if (total <= 0) {
@@ -702,7 +837,7 @@ export async function postExpenseClaim(db: any, claim: any) {
     return;
   }
   const liability = await getControlAccount(db, 'EXPENSE_CLAIMS');
-  lines.push({ accountId: liability.id, credit: total });
+  lines.push(fxLine(liability.id, 'credit', total, currency, rate));
   await postJournal(db, {
     sourceDocumentId: claim.id,
     transactionType: `Expense Claim ${claim.reference || ''}`.trim(),
@@ -717,6 +852,7 @@ export async function postCreditNote(db: any, note: any) {
     await reverseJournal(db, note.id);
     return;
   }
+  const { currency, rate } = documentFx(note);
   const ar = await getControlAccount(db, 'AR');
   const sales = await getControlAccount(db, 'SALES');
   await postJournal(db, {
@@ -724,13 +860,14 @@ export async function postCreditNote(db: any, note: any) {
     transactionType: `Credit Note ${note.reference || ''}`.trim(),
     date: note.issueDate || new Date(),
     lines: [
-      { accountId: sales.id, debit: amount },
-      { accountId: ar.id, credit: amount },
+      fxLine(sales.id, 'debit', amount, currency, rate),
+      fxLine(ar.id, 'credit', amount, currency, rate),
     ],
   });
 }
 
 export async function postDebitNote(db: any, note: any) {
+  const { currency, rate } = documentFx(note);
   const items = note.items || [];
   const lines: JournalLine[] = [];
   let total = 0;
@@ -738,7 +875,7 @@ export async function postDebitNote(db: any, note: any) {
     const amt = lineAmount(item);
     if (amt <= 0) continue;
     const acc = await resolveAccount(db, item.account || 'Inventory');
-    lines.push({ accountId: acc.id, credit: amt });
+    lines.push(fxLine(acc.id, 'credit', amt, currency, rate));
     total = round2(total + amt);
   }
   const amount = round2(Number(note.amount || total || 0));
@@ -748,13 +885,13 @@ export async function postDebitNote(db: any, note: any) {
   }
   if (!lines.length) {
     const inventory = await getControlAccount(db, 'INVENTORY');
-    lines.push({ accountId: inventory.id, credit: amount });
+    lines.push(fxLine(inventory.id, 'credit', amount, currency, rate));
     total = amount;
   }
   const counter = note.supplierId
     ? await getControlAccount(db, 'AP')
     : await getControlAccount(db, 'AR');
-  lines.push({ accountId: counter.id, debit: total || amount });
+  lines.push(fxLine(counter.id, 'debit', total || amount, currency, rate));
   await postJournal(db, {
     sourceDocumentId: note.id,
     transactionType: `Debit Note ${note.reference || ''}`.trim(),
@@ -873,4 +1010,52 @@ export async function backfillUnpostedDocuments(db: any) {
   }
 
   return { posted, errors };
+}
+
+export async function unrealizedFxReport(db: any) {
+  await ensureMultiCurrencyColumns(db);
+  const accounts = await db.chartOfAccount.findMany({
+    include: { ledgerEntries: true },
+    orderBy: { name: 'asc' },
+  });
+  const rows: any[] = [];
+  for (const account of accounts) {
+    const code = (account.currency || BASE_CURRENCY).toUpperCase();
+    if (code === BASE_CURRENCY) continue;
+    let foreign = 0;
+    let booked = 0;
+    for (const e of account.ledgerEntries || []) {
+      const fd = Number(e.foreignDebit || 0);
+      const fc = Number(e.foreignCredit || 0);
+      const d = Number(e.debit || 0);
+      const c = Number(e.credit || 0);
+      if (['Asset', 'Expense'].includes(account.accountType)) {
+        foreign = round2(foreign + fd - fc);
+        booked = round2(booked + d - c);
+      } else {
+        foreign = round2(foreign + fc - fd);
+        booked = round2(booked + c - d);
+      }
+    }
+    if (Math.abs(foreign) < 0.01 && Math.abs(booked) < 0.01) continue;
+    const rateRow = await db.exchangeRate.findFirst({
+      where: { currencyCode: code },
+      orderBy: { date: 'desc' },
+    });
+    const exchangeRate = Number(rateRow?.rate) || 1;
+    const convertedBalance = round2(foreign * exchangeRate);
+    const gainLoss = round2(convertedBalance - booked);
+    rows.push({
+      id: account.id,
+      account: account.name,
+      foreignBalance: foreign,
+      currency: code,
+      exchangeRate,
+      convertedBalance,
+      closingBalance: booked,
+      gainLoss: Math.abs(gainLoss),
+      isGain: gainLoss >= 0,
+    });
+  }
+  return rows;
 }

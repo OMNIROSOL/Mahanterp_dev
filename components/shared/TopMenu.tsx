@@ -17,6 +17,7 @@ import {
   Wallet,
   Receipt,
   Shield,
+  Users,
   Activity
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
@@ -137,10 +138,12 @@ const TopMenu: React.FC = () => {
       submenu: [
         { label: 'Summary', path: '/summary', id: 'summary', icon: Columns2 },
         { label: 'Bank and Cash Accounts', path: '/account', id: 'bank-accounts', icon: Coins, countKey: 'bankAccounts' },
+        { label: 'Bank Reconciliation', path: '/bank-reconciliation', id: 'bank-reconciliation', icon: FileSpreadsheet },
         { label: 'Receipts', path: '/receipts', id: 'receipts', icon: PlusSquare, countKey: 'receipts' },
         { label: 'Payments', path: '/payments', id: 'payments', icon: MinusSquare, countKey: 'payments' },
         { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers', icon: ArrowLeftRight, countKey: 'transfers' },
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims', icon: Wallet, countKey: 'expenseClaims' },
+        { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers', icon: Users },
       ]
     },
     {
@@ -151,6 +154,7 @@ const TopMenu: React.FC = () => {
       submenu: [
         { label: 'Income Items', path: '/master/income-items', id: 'units' },
         { label: 'Expense Items', path: '/master/expense-items', id: 'categories' },
+        { label: 'Employees', path: '/employees', id: 'employees' },
         { label: 'Units of Measure', path: '/master/units', id: 'units' },
         { label: 'Item Categories', path: '/master/categories', id: 'categories' },
       ]
@@ -239,12 +243,15 @@ const TopMenu: React.FC = () => {
   });
 
   return (
-    <div className="bg-slate-900 border-b border-slate-800 text-slate-300 relative z-40 shadow-md flex items-center px-6 whitespace-nowrap flex-wrap">
+    <div className="app-topmenu border-b text-slate-300 relative z-40 shadow-md flex items-center px-6 whitespace-nowrap flex-wrap">
       {visibleMenuItems.map((item, idx) => {
         const Icon = item.icon;
-        // Check if any submenu is active or if the item's path is active
-        const isChildActive = item.submenu?.some(sub => location.pathname.startsWith(sub.path));
-        const isActive = location.pathname.startsWith(item.path) || isChildActive;
+        const isPathActive = (path: string) =>
+          path === '/'
+            ? location.pathname === '/'
+            : location.pathname === path || location.pathname.startsWith(`${path}/`);
+        const isChildActive = item.submenu?.some(sub => isPathActive(sub.path));
+        const isActive = isPathActive(item.path) || Boolean(isChildActive);
 
         return (
           <div 
@@ -255,6 +262,7 @@ const TopMenu: React.FC = () => {
           >
             <NavLink
               to={item.submenu ? item.submenu[0].path : item.path}
+              end={item.path === '/'}
               className={cn(
                 "flex items-center gap-2 px-4 py-4 text-sm font-medium transition-colors border-b-2",
                 isActive 

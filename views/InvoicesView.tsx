@@ -9,6 +9,7 @@ import DataTable from '../components/shared/DataTable';
 import Button from '../components/shared/Button';
 import Badge from '../components/shared/Badge';
 import BatchActionBar from '../components/shared/BatchActionBar';
+import RowActions from '../components/shared/RowActions';
 
 const InvoicesView = () => {
     const navigate = useNavigate();
@@ -400,24 +401,11 @@ const InvoicesView = () => {
             id: 'Actions',
             header: 'Actions',
             accessor: (inv: any) => (
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => navigate(`/sales-invoices/view/${inv.id}`)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-transparent hover:border-indigo-100"
-                        title="View Details"
-                    >
-                        <Eye size={14} />
-                    </button>
-                    {perms?.edit !== false && (
-                        <button
-                            onClick={() => navigate(`/sales-invoices/edit/${inv.id}`)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-transparent hover:border-blue-100 font-bold"
-                            title="Edit Invoice"
-                        >
-                            <Edit size={14} />
-                        </button>
-                    )}
-                </div>
+                <RowActions
+                    viewPath={`/sales-invoices/view/${inv.id}`}
+                    editPath={`/sales-invoices/edit/${inv.id}`}
+                    showEdit={perms?.edit !== false}
+                />
             )
         },
         {

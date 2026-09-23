@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ShieldCheck, 
@@ -13,18 +13,27 @@ import {
 } from 'lucide-react';
 import Card from '../components/shared/Card';
 import Button from '../components/shared/Button';
+import { getApprovalSettings, saveApprovalSettings } from '../utils/approvalSettings';
 
 const SettingsApprovalsView = () => {
   const navigate = useNavigate();
-  const [marginThreshold, setMarginThreshold] = useState('10');
-  const [enableStockApproval, setEnableStockApproval] = useState(true);
-  const [enablePriceApproval, setEnablePriceApproval] = useState(true);
-  const [enableCreditLimitApproval, setEnableCreditLimitApproval] = useState(false);
-  const [minAmountForApproval, setMinAmountForApproval] = useState('1000');
+  const saved = getApprovalSettings();
+  const [quotesRequireApproval, setQuotesRequireApproval] = useState(saved.quotesRequireApproval);
+  const [marginThreshold, setMarginThreshold] = useState(String(saved.marginThreshold));
+  const [enableStockApproval, setEnableStockApproval] = useState(saved.enableStockApproval);
+  const [enablePriceApproval, setEnablePriceApproval] = useState(saved.enablePriceApproval);
+  const [enableCreditLimitApproval, setEnableCreditLimitApproval] = useState(saved.enableValueApproval);
+  const [minAmountForApproval, setMinAmountForApproval] = useState(String(saved.minAmountForApproval));
 
   const handleSave = () => {
-    // In a real app, this would save to a database or global state
-    alert('Approval settings saved successfully!');
+    saveApprovalSettings({
+      quotesRequireApproval,
+      marginThreshold: Number(marginThreshold) || 10,
+      enableStockApproval,
+      enablePriceApproval,
+      enableValueApproval: enableCreditLimitApproval,
+      minAmountForApproval: Number(minAmountForApproval) || 0,
+    });
     navigate('/settings');
   };
 
@@ -98,10 +107,28 @@ const SettingsApprovalsView = () => {
             <div className="flex-1 space-y-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Approval Triggers</h3>
-                <p className="text-sm text-slate-500">Enable or disable automatic approval requirements based on document content.</p>
+                <p className="text-sm text-slate-500">Sales quotes complete without approval unless you turn this on.</p>
               </div>
               
               <div className="space-y-4">
+                <label className="flex items-center justify-between p-4 bg-indigo-50 rounded-2xl cursor-pointer hover:bg-indigo-100/70 transition-colors border border-indigo-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center">
+                      <ShieldCheck size={16} className="text-indigo-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">Sales quotes require approval</p>
+                      <p className="text-[10px] text-slate-500 font-medium">Leave off so sales users can create quotes immediately</p>
+                    </div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={quotesRequireApproval} 
+                    onChange={(e) => setQuotesRequireApproval(e.target.checked)}
+                    className="w-5 h-5 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500" 
+                  />
+                </label>
+
                 <label className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center">

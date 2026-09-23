@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { Invoice, Division, FooterTemplate, InventoryUnitCost } from '../types';
 import apiService from '../services/apiService';
+import { CurrencyRateFields, BaseEquivalent } from '../components/shared/CurrencyRateFields';
+import { currencyCode } from '../utils/currency';
+import { DEFAULT_TAX_CODE, taxRateForCode } from '../utils/tax';
+import { getDocumentDefaults } from '../utils/documentDefaults';
+import { getApprovalSettings } from '../utils/approvalSettings';
 import Card from '../components/shared/Card';
 import Button from '../components/shared/Button';
 import FormInput from '../components/shared/FormInput';
@@ -139,6 +144,8 @@ const NewSalesInvoiceView = () => {
     const [customer, setCustomer] = useState('');
     const [currency, setCurrency] = useState('ZMW');
     const [exchangeRate, setExchangeRate] = useState(1);
+    const [rateManual, setRateManual] = useState(false);
+    const [currencies, setCurrencies] = useState<any[]>([]);
     const [decimalPlaces, setDecimalPlaces] = useState(2);
     const [billingAddress, setBillingAddress] = useState('');
     const [description, setDescription] = useState('');
@@ -149,7 +156,7 @@ const NewSalesInvoiceView = () => {
     const [status, setStatus] = useState('Coming due');
     const [customers, setCustomers] = useState<any[]>([]);
     const [inventoryItems, setInventoryItems] = useState<any[]>([]);
-    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', account: 'Inventory sales', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: '' }]);
+    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', account: 'Inventory sales', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }]);
     const [copyFromId, setCopyFromId] = useState<string | null>(null);
 
     const [availableDivisions, setAvailableDivisions] = useState<Division[]>([]);
@@ -235,6 +242,7 @@ const NewSalesInvoiceView = () => {
     }, [unitCosts, marginThreshold, exchangeRate, decimalPlaces]);
 
     const approvalReason = useMemo(() => {
+        const settings = getApprovalSettings();
         let reason = '';
         const itemsToValidate = items.filter(i => i.item !== 'Select Item');
         for (const item of itemsToValidate) {
@@ -243,16 +251,18 @@ const NewSalesInvoiceView = () => {
                 const qty = parseFloat(item.qty) || 0;
                 const price = parseFloat(item.unitPrice) || 0;
                 const stock = parseFloat(inventoryItem.qtyOnHand || 0);
-                if (qty > stock) reason += `Insufficient stock for ${item.item} (Req: ${qty}, Avail: ${stock}). `;
+                if (settings.enableStockApproval && qty > stock) reason += `Insufficient stock for ${item.item} (Req: ${qty}, Avail: ${stock}). `;
                 const standardSellingPrice = inventoryItem.sellingPrice || 0;
                 const minPrice = getMinSellingPrice(item.itemId, item.division, standardSellingPrice);
                 const convertedPurchasePrice = Number(inventoryItem.avgCost || 0) / exchangeRate;
-                if (price < convertedPurchasePrice) reason += `Price for ${item.item} (${price}) is below purchase price (${convertedPurchasePrice.toFixed(2)}). `;
-                else if (price < minPrice) reason += `Price for ${item.item} (${price}) is below allowed minimum selling price (min: ${minPrice.toFixed(2)}). `;
+                if (settings.enablePriceApproval) {
+                    if (price < convertedPurchasePrice) reason += `Price for ${item.item} (${price}) is below purchase price (${convertedPurchasePrice.toFixed(2)}). `;
+                    else if (price < minPrice) reason += `Price for ${item.item} (${price}) is below allowed minimum selling price (min: ${minPrice.toFixed(2)}). `;
+                }
             }
         }
         return reason.trim();
-    }, [items, inventoryMap, getMinSellingPrice]);
+    }, [items, inventoryMap, getMinSellingPrice, exchangeRate]);
 
     const fetchReference = async () => {
         try {
@@ -263,11 +273,15 @@ const NewSalesInvoiceView = () => {
         }
     };
 
-    const requiresApproval = useMemo(() => approvalReason.length > 0, [approvalReason]);
+    const requiresApproval = useMemo(() => {
+        const settings = getApprovalSettings();
+        if (!settings.enableStockApproval && !settings.enablePriceApproval && !settings.enableValueApproval) return false;
+        return approvalReason.length > 0;
+    }, [approvalReason]);
 
-    // Options (Standardized with Sales Order)
+    const docDefaults = getDocumentDefaults();
     const [options, setOptions] = useState({
-        amountsAreTaxInclusive: false,
+        amountsAreTaxInclusive: docDefaults.amountsAreTaxInclusive,
         rounding: false,
         roundingType: 'Round to nearest',
         columnLineNumber: true,
@@ -345,6 +359,11 @@ const NewSalesInvoiceView = () => {
                         setIssueDate(parsedIssueDate);
                         setCustomer(sourceDoc.customer?.name || sourceDoc.customer || '');
                         setCurrency(sourceDoc.currency || sourceDoc.customer?.currency?.split(' - ')[0] || 'ZMW');
+                        const savedRate = Number(sourceDoc.exchangeRate ?? sourceDoc.docOptions?.exchangeRate);
+                        if (savedRate > 0) {
+                            setExchangeRate(savedRate);
+                            setRateManual(true);
+                        }
                         setBillingAddress(sourceDoc.billingAddress || sourceDoc.customer?.billingAddress || '');
 
                         if (copyFromId) {
@@ -358,6 +377,9 @@ const NewSalesInvoiceView = () => {
                         setDescription(sourceDoc.description || sourceDoc.docOptions?.description || '');
                         setDivision(sourceDoc.division || sourceDoc.docOptions?.division || sourceDoc.items?.[0]?.division || sourceDoc.customer?.division || 'General');
                         setTpin(sourceDoc.customer?.tpin || '');
+                        if (sourceDoc.docOptions) {
+                            setOptions((prev) => ({ ...prev, ...sourceDoc.docOptions }));
+                        }
 
                         if (sourceDoc.dueDate && sourceDoc.issueDate) {
                             const issue = new Date(sourceDoc.issueDate);
@@ -384,7 +406,7 @@ const NewSalesInvoiceView = () => {
                                 qty: (i.qty || '1').toString(),
                                 unitPrice: (i.unitPrice || '0').toString(),
                                 discount: (i.discount || '').toString(),
-                                taxCode: i.taxCode || i.tax_codes?.name || 'No tax'
+                                taxCode: i.taxCode || i.tax_codes?.name || DEFAULT_TAX_CODE
                             })));
                         }
                     }
@@ -403,7 +425,7 @@ const NewSalesInvoiceView = () => {
                 setDescription('');
                 setDivision('General');
                 setTpin('');
-                setItems([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', account: 'Inventory sales', division: 'General', qty: '1', unitPrice: '', discount: '', taxCode: '' }]);
+                setItems([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', account: 'Inventory sales', division: 'General', qty: '1', unitPrice: '', discount: '', taxCode: DEFAULT_TAX_CODE }]);
             }
         };
         loadData();
@@ -441,9 +463,10 @@ const NewSalesInvoiceView = () => {
             c.id === customer
         );
         if (selected) {
-            const currencyCode = selected.currency?.split(' - ')[0] || 'ZMW';
-            if (currencyCode !== currency) {
-                setCurrency(currencyCode);
+            const currencyCodeVal = selected.currency?.split(' - ')[0] || 'ZMW';
+            if (currencyCodeVal !== currency) {
+                setCurrency(currencyCodeVal);
+                setRateManual(false);
             }
 
             // Sync due date days with customer credit terms
@@ -463,21 +486,22 @@ const NewSalesInvoiceView = () => {
                     setDecimalPlaces(2);
                     return;
                 }
+                if (rateManual) return;
                 const rateData = await apiService.getExchangeRateAtDate(issueDate, currency);
                 setExchangeRate(rateData.rate || 1);
-                
-                // Fetch decimal places from currency list
+
                 const currenciesData = await apiService.getCurrencies();
+                setCurrencies(currenciesData || []);
                 const currObj = currenciesData.find((c: any) => c.code === currency);
                 setDecimalPlaces(currObj?.decimalPlaces ?? 2);
             } catch (e) {
                 console.error('Failed to load exchange rate:', e);
-                setExchangeRate(1);
+                if (!rateManual) setExchangeRate(1);
                 setDecimalPlaces(2);
             }
         };
         fetchRate();
-    }, [currency, issueDate]);
+    }, [currency, issueDate, rateManual]);
 
     // Insights Logic
     const itemHistory = useMemo(() => {
@@ -556,9 +580,8 @@ const NewSalesInvoiceView = () => {
             }
 
             let taxAmount = 0;
-            const selectedTax = taxCodes.find(tc => tc.name === item.taxCode);
-            if (selectedTax) {
-                const taxRate = parseFloat(selectedTax.rate) / 100;
+            const taxRate = taxRateForCode(taxCodes, item.taxCode) / 100;
+            if (taxRate > 0) {
                 if (options.amountsAreTaxInclusive) {
                     taxAmount = netTotal - (netTotal / (1 + taxRate));
                     netTotal = netTotal - taxAmount;
@@ -604,13 +627,19 @@ const NewSalesInvoiceView = () => {
             return;
         }
 
-        const validItems = items.filter(i => i.item && i.item !== 'Select Item' && i.item !== '' && i.itemId);
+        const validItems = items.map(i => ({
+            ...i,
+            itemId: i.itemId || inventoryMap[i.item]?.id || '',
+        })).filter(i => i.item && i.item !== 'Select Item' && i.item !== '' && i.itemId);
         if (validItems.length === 0) {
-            alert('Please select at least one valid item.');
+            alert('Please select at least one inventory item on the invoice before saving.');
             return;
         }
 
-        const selectedCustomer = customers.find(c => c.name === customer);
+        const selectedCustomer = customers.find(c =>
+            c.name?.trim().toLowerCase() === customer.trim().toLowerCase() ||
+            c.id === customer
+        );
         if (!selectedCustomer) {
             alert('Selected customer not found.');
             return;
@@ -634,8 +663,9 @@ const NewSalesInvoiceView = () => {
             billingAddress: billingAddress,
             issueDate: issueDate,
             dueDate: calculateDueDate(),
-            docOptions: { ...options, division },
+            docOptions: { ...options, division, currency, exchangeRate },
             currency: currency,
+            exchangeRate,
             items: validItems.map(i => ({
                 itemId: i.itemId,
                 description: i.description,
@@ -650,8 +680,7 @@ const NewSalesInvoiceView = () => {
 
         try {
             if (isEditing) {
-                // await apiService.updateInvoice(id!, invoiceData);
-                alert('Update functionality not fully implemented in API yet.');
+                await apiService.updateInvoice(id!, invoiceData);
             } else {
                 await apiService.createInvoice(invoiceData);
             }
@@ -755,6 +784,20 @@ const NewSalesInvoiceView = () => {
                             </div>
 
                             <InputField label="TPIN" value={tpin} onChange={(e: any) => setTpin(e.target.value)} placeholder="Customer TPIN..." Icon={Hash} />
+                            <CurrencyRateFields
+                                className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6"
+                                currency={currency}
+                                exchangeRate={exchangeRate}
+                                currencies={currencies}
+                                onCurrencyChange={(code) => {
+                                    setCurrency(code);
+                                    setRateManual(false);
+                                }}
+                                onRateChange={(rate) => {
+                                    setExchangeRate(rate);
+                                    setRateManual(true);
+                                }}
+                            />
                         </div>
                     </div>
 
@@ -772,7 +815,8 @@ const NewSalesInvoiceView = () => {
                                 setCustomer(custName);
                                 const selected = customers.find(c => c.name === custName);
                                 if (selected) {
-                                    setCurrency(selected.currency?.split(' - ')[0] || 'ZMW');
+                                    setCurrency(currencyCode(selected.currency));
+                                    setRateManual(false);
                                     setBillingAddress(selected.billingAddress || '');
                                     setTpin(selected.tpin || '');
                                     if (selected.division) setDivision(selected.division);
@@ -800,7 +844,7 @@ const NewSalesInvoiceView = () => {
                                 </div>
                                 <h2 className="text-lg font-black text-slate-800 tracking-tight">Invoice Line Items</h2>
                             </div>
-                            <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', itemId: '', description: '', account: 'Inventory sales', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: '' }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
+                            <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', itemId: '', description: '', account: 'Inventory sales', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
                                 <Plus size={14} /> <span>Add Row</span>
                             </button>
                         </div>
@@ -1024,14 +1068,14 @@ const NewSalesInvoiceView = () => {
                         <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end pr-24">
                             <div className="w-full max-w-sm space-y-2">
                                 <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                    <span>Subtotal ({currency})</span>
+                                    <span>{options.amountsAreTaxInclusive ? 'Net (excl. VAT)' : `Subtotal (${currency})`}</span>
                                     <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">
                                         <span className="text-[10px] font-black text-slate-400 mr-1 opacity-50">{currency}</span>
                                         {calculations.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>
                                 </div>
                                 <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                    <span>Tax Component</span>
+                                    <span>{options.amountsAreTaxInclusive ? 'VAT 16%' : 'Tax Component'}</span>
                                     <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">
                                         {calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>
@@ -1049,10 +1093,13 @@ const NewSalesInvoiceView = () => {
                                         <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em]">Total Payable</p>
                                         {options.rounding && <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest leading-none mt-1">Rounding Applied</p>}
                                     </div>
-                                    <h2 className="text-xl font-medium text-slate-900 tracking-tight tabular-nums flex items-baseline">
-                                        <span className="text-xs font-medium text-indigo-400 mr-2 uppercase">{currency}</span>
-                                        {calculations.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                    </h2>
+                                    <div className="text-right">
+                                        <h2 className="text-xl font-medium text-slate-900 tracking-tight tabular-nums flex items-baseline justify-end">
+                                            <span className="text-xs font-medium text-indigo-400 mr-2 uppercase">{currency}</span>
+                                            {calculations.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </h2>
+                                        <BaseEquivalent amount={calculations.grandTotal} currency={currency} exchangeRate={exchangeRate} />
+                                    </div>
                                 </div>
                             </div>
                         </div>

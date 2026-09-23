@@ -1,12 +1,20 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Calculator, Ship, Truck, FileText, DollarSign, Percent, TrendingUp,
   Package, Anchor, Container, Search, ChevronDown, BarChart3, Landmark,
   ShieldCheck, Banknote, Scale, Receipt, Globe, ArrowRight, Save, Download,
-  CheckCircle2, Loader2
+  CheckCircle2, Loader2, RefreshCcw
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import { exportToPDF } from '../../utils/exportUtils';
+import {
+  BASE_CURRENCY,
+  currencyCode,
+  defaultChargeCurrencies,
+  landedCostTotals,
+  chargeToBase,
+} from '../../utils/landedCost';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,9 +104,50 @@ const InputField = ({
   </div>
 );
 
+const ChargeField = ({
+  label, icon: Icon, value, currency, onAmount, onCurrency, currencies,
+}: {
+  label: string;
+  icon?: any;
+  value: string | number;
+  currency: string;
+  onAmount: (v: string) => void;
+  onCurrency: (code: string) => void;
+  currencies: { code: string }[];
+}) => (
+  <div className="space-y-1.5">
+    <label className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-1.5">
+      {Icon && <Icon size={10} />}
+      {label}
+    </label>
+    <div className="flex gap-2">
+      <input
+        type="number"
+        step="0.01"
+        value={value}
+        onChange={(e) => onAmount(e.target.value)}
+        placeholder="0.00"
+        className="flex-1 min-w-0 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-white"
+      />
+      <select
+        value={currencyCode(currency)}
+        onChange={(e) => onCurrency(e.target.value)}
+        className="w-[88px] shrink-0 px-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+      >
+        {(currencies.length ? currencies : [{ code: 'ZMW' }, { code: 'USD' }]).map((c) => (
+          <option key={c.code} value={c.code}>{c.code}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+);
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 const CostingReportView = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   // Logistics state
   const [logistics, setLogistics] = useState<LogisticsInputs>({
     inv: '', bl: '', cont: '', tpt: '', truck: ''
@@ -110,6 +159,9 @@ const CostingReportView = () => {
     roadTransport: 0, clearingAgent: 0, duty: 0,
     zabs: 0, overweight: 0, bankCharges: 0, exchangeRate: 1
   });
+  const [chargeCurrencies, setChargeCurrencies] = useState<Record<string, string>>(defaultChargeCurrencies('USD'));
+  const [currencies, setCurrencies] = useState<{ code: string; name?: string }[]>([]);
+  const [rateManual, setRateManual] = useState(false);
 
   // Bank charges auto-calculate toggle
   const [autoBankCharges, setAutoBankCharges] = useState(true);
@@ -118,7 +170,13 @@ const CostingReportView = () => {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // PO / Shipment selection
+  // PI / Shipment selection
+  const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [invoiceDropdownOpen, setInvoiceDropdownOpen] = useState(false);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+
   const [shipments, setShipments] = useState<any[]>([]);
   const [selectedShipmentId, setSelectedShipmentId] = useState('');
   const [shipmentSearch, setShipmentSearch] = useState('');
@@ -133,17 +191,22 @@ const CostingReportView = () => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const isAdmin = currentUser.role === 'Admin';
 
-  // ─── Load Shipments & Settings ───────────────────────────────────────────────
+  // ─── Load Invoices, Shipments & Settings ─────────────────────────────────
 
   useEffect(() => {
     const load = async () => {
       setLoadingShipments(true);
+      setLoadingInvoices(true);
       try {
-        const [data, rates] = await Promise.all([
+        const [shipData, invData, rates, currs] = await Promise.all([
           apiService.getProcurementShipments(),
-          apiService.getExchangeRates().catch(() => [])
+          apiService.getPurchaseInvoices(),
+          apiService.getExchangeRates().catch(() => []),
+          apiService.getCurrencies().catch(() => []),
         ]);
-        setShipments((data || []).filter((s: any) => s.status !== 'Completed'));
+        setShipments((shipData || []).filter((s: any) => s.status !== 'Completed'));
+        setPurchaseInvoices(invData || []);
+        setCurrencies(currs || []);
         if (rates && rates.length > 0) {
           setSystemExchangeRate(Number(rates[0].rate) || 1);
           setSystemCurrency(rates[0].currencyCode || 'USD');
@@ -152,111 +215,200 @@ const CostingReportView = () => {
         console.error('Failed to load initial data:', err);
       } finally {
         setLoadingShipments(false);
+        setLoadingInvoices(false);
       }
     };
     load();
   }, []);
 
-  // ─── Auto-calculate bank charges at 1.5% ───────────────────────────────
-
-  useEffect(() => {
-    if (autoBankCharges) {
-      const base = expenses.totalFob + expenses.fobCharge + expenses.freight +
-        expenses.insurance + expenses.duty;
-      const bankChg = base * 0.015;
-      setExpenses(prev => ({ ...prev, bankCharges: Math.round(bankChg * 100) / 100 }));
-    }
-  }, [
-    autoBankCharges, expenses.totalFob, expenses.fobCharge,
-    expenses.freight, expenses.insurance, expenses.duty
-  ]);
-
-  // ─── Derived calculations ──────────────────────────────────────────────
-
-  const totalExpenses = useMemo(() => {
-    return expenses.fobCharge + expenses.freight + expenses.insurance +
-      expenses.roadTransport + expenses.clearingAgent + expenses.duty +
-      expenses.zabs + expenses.overweight + expenses.bankCharges;
-  }, [expenses]);
-
-  const expenseRatio = useMemo(() => {
-    return expenses.totalFob > 0 ? (totalExpenses / expenses.totalFob) * 100 : 0;
-  }, [totalExpenses, expenses.totalFob]);
-
-  const grandTotal = useMemo(() => {
-    return expenses.totalFob + totalExpenses;
-  }, [expenses.totalFob, totalExpenses]);
-
-  // ─── Selected Shipment Items + Allocation ────────────────────────────────────
+  const selectedInvoice = useMemo(
+    () => purchaseInvoices.find((inv: any) => inv.id === selectedInvoiceId),
+    [purchaseInvoices, selectedInvoiceId]
+  );
 
   const selectedShipment = useMemo(() => {
     return shipments.find(s => s.id === selectedShipmentId);
   }, [shipments, selectedShipmentId]);
 
-  const shipmentCurrency = selectedShipment?.supplier?.currency || 'USD';
+  const docCurrency = currencyCode(
+    selectedInvoice?.currency || selectedShipment?.currency || selectedShipment?.supplier?.currency || 'USD'
+  );
+
+  const applySnapshot = useCallback((meta: any, fallbackCurrency: string) => {
+    if (!meta) return;
+    if (meta.expenses) {
+      setExpenses((prev) => ({ ...prev, ...meta.expenses }));
+      if (Number(meta.expenses.exchangeRate) > 0) setRateManual(true);
+    }
+    if (meta.chargeCurrencies) setChargeCurrencies({ ...defaultChargeCurrencies(fallbackCurrency), ...meta.chargeCurrencies });
+    if (meta.logistics) setLogistics((prev) => ({ ...prev, ...meta.logistics }));
+  }, []);
+
+  const handleSelectInvoice = useCallback(async (invoiceId: string) => {
+    setSelectedInvoiceId(invoiceId);
+    setInvoiceDropdownOpen(false);
+    setInvoiceSearch('');
+    let invoice = purchaseInvoices.find((inv: any) => inv.id === invoiceId);
+    try {
+      const full = await apiService.getPurchaseInvoice(invoiceId);
+      if (full) invoice = { ...(invoice || {}), ...full };
+    } catch { /* use list snapshot */ }
+    if (!invoice) return;
+    setPurchaseInvoices((prev) => {
+      const exists = prev.some((row: any) => row.id === invoice.id);
+      if (exists) return prev.map((row: any) => row.id === invoice.id ? { ...row, ...invoice } : row);
+      return [invoice, ...prev];
+    });
+    const code = currencyCode(invoice.currency || invoice.suppliers?.currency);
+    setChargeCurrencies(defaultChargeCurrencies(code));
+    const items = invoice.items || [];
+    const total = items.reduce((sum: number, item: any) =>
+      sum + ((Number(item.unitPrice) || 0) * (Number(item.qty) || 0)), 0
+    );
+    const savedRate = Number(invoice.exchangeRate || invoice.docOptions?.exchangeRate);
+    let rate = savedRate > 0 ? savedRate : 1;
+    if (!savedRate && code !== BASE_CURRENCY) {
+      try {
+        const rateData = await apiService.getExchangeRateAtDate(
+          invoice.issueDate || invoice.created_at || new Date().toISOString().slice(0, 10),
+          code
+        );
+        rate = Number(rateData.rate) || 1;
+      } catch { /* keep 1 */ }
+    }
+    setRateManual(savedRate > 0);
+    setAutoBankCharges(false);
+    setExpenses((prev) => ({
+      ...prev,
+      totalFob: Math.round(total * 100) / 100,
+      exchangeRate: rate,
+    }));
+    setLogistics((prev) => ({ ...prev, inv: invoice.reference || prev.inv }));
+    try {
+      const existing = await apiService.getProcurementCostingReport({ invoiceId });
+      const meta = existing?.[0]?.costingMeta;
+      if (meta) {
+        applySnapshot(meta, code);
+        setAutoBankCharges(false);
+      }
+    } catch { /* first costing */ }
+  }, [purchaseInvoices, applySnapshot]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const invoiceId = params.get('invoiceId');
+    if (!invoiceId || loadingInvoices || invoiceId === selectedInvoiceId) return;
+    handleSelectInvoice(invoiceId);
+  }, [location.search, loadingInvoices, selectedInvoiceId, handleSelectInvoice]);
+
+  // ─── Auto-calculate bank charges at 1.5% of ZMW components ─────────────
+
+  useEffect(() => {
+    if (!autoBankCharges) return;
+    const fx = Number(expenses.exchangeRate) || 1;
+    const base =
+      chargeToBase(expenses.totalFob, chargeCurrencies.totalFob, fx) +
+      chargeToBase(expenses.fobCharge, chargeCurrencies.fobCharge, fx) +
+      chargeToBase(expenses.freight, chargeCurrencies.freight, fx) +
+      chargeToBase(expenses.insurance, chargeCurrencies.insurance, fx) +
+      chargeToBase(expenses.duty, chargeCurrencies.duty, fx);
+    const bankChgZmw = base * 0.015;
+    const bankCcy = chargeCurrencies.bankCharges || BASE_CURRENCY;
+    const bankAmount = bankCcy === BASE_CURRENCY ? bankChgZmw : (fx > 0 ? bankChgZmw / fx : bankChgZmw);
+    setExpenses(prev => ({ ...prev, bankCharges: Math.round(bankAmount * 100) / 100 }));
+  }, [
+    autoBankCharges, expenses.totalFob, expenses.fobCharge,
+    expenses.freight, expenses.insurance, expenses.duty, expenses.exchangeRate, chargeCurrencies
+  ]);
+
+  // ─── Derived calculations (always in ZMW) ──────────────────────────────
+
+  const totals = useMemo(
+    () => landedCostTotals(expenses as any, chargeCurrencies, expenses.exchangeRate),
+    [expenses, chargeCurrencies]
+  );
+  const totalExpenses = totals.expensesBase;
+  const expenseRatio = totals.expenseRatio;
+  const grandTotal = totals.grandBase;
+
+  const sourceLines = useMemo(() => {
+    if (selectedInvoice?.items?.length) {
+      return (selectedInvoice.items as any[]).map((item) => ({
+        id: item.id,
+        itemId: item.itemId || item.item?.id,
+        itemCode: item.item?.itemCode || item.itemId || '—',
+        itemName: item.description || item.item?.itemName || item.item?.description || '—',
+        qty: Number(item.qty) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        poReference: selectedInvoice.reference || '',
+      }));
+    }
+    if (selectedShipment?.items?.length) {
+      return (selectedShipment.items as any[]).map((item) => ({
+        id: item.id,
+        itemId: item.item?.id || item.itemId,
+        itemCode: item.item?.itemCode || item.itemId || '—',
+        itemName: item.description || item.item?.description || item.item?.itemName || '—',
+        qty: Number(item.qty) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        poReference: item.poReference || '',
+      }));
+    }
+    return [];
+  }, [selectedInvoice, selectedShipment]);
 
   const allocatedItems = useMemo(() => {
-    if (!selectedShipment || !selectedShipment.items) return [];
-    const ratio = expenseRatio / 100;
-
+    if (!sourceLines.length) return [];
+    const fx = Number(expenses.exchangeRate) || 1;
+    const fobCcy = chargeCurrencies.totalFob || docCurrency;
     const grouped = new Map<string, any>();
     const ungrouped: any[] = [];
 
-    selectedShipment.items.forEach((item: any) => {
-      const unitFob = Number(item.unitPrice) || 0;
+    sourceLines.forEach((item: any) => {
       const qty = Number(item.qty) || 0;
-      const lineFob = unitFob * qty;
-      const itemId = item.item?.id || item.itemId;
-
+      const lineFob = (Number(item.unitPrice) || 0) * qty;
+      const lineFobBase = chargeToBase(lineFob, fobCcy, fx);
+      const itemId = item.itemId;
+      const row = {
+        id: item.id,
+        itemId: itemId || '',
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        qty,
+        lineFob,
+        lineFobBase,
+        poReference: item.poReference || '',
+      };
       if (itemId) {
-        if (!grouped.has(itemId)) {
-          grouped.set(itemId, {
-            id: item.id,
-            itemId: itemId,
-            itemCode: item.item?.itemCode || itemId || '—',
-            itemName: item.description || item.item?.description || item.item?.itemName || '—',
-            qty,
-            lineFob,
-            poReference: item.poReference || ''
-          });
-        } else {
+        if (!grouped.has(itemId)) grouped.set(itemId, { ...row });
+        else {
           const existing = grouped.get(itemId);
           existing.qty += qty;
           existing.lineFob += lineFob;
-          if (item.poReference && !existing.poReference.includes(item.poReference)) {
-            existing.poReference = existing.poReference ? `${existing.poReference}, ${item.poReference}` : item.poReference;
-          }
+          existing.lineFobBase += lineFobBase;
         }
       } else {
-        ungrouped.push({
-          id: item.id,
-          itemId: '',
-          itemCode: '—',
-          itemName: item.description || '—',
-          qty,
-          lineFob,
-          poReference: item.poReference || ''
-        });
+        ungrouped.push(row);
       }
     });
 
     const combined = [...Array.from(grouped.values()), ...ungrouped];
+    const ratio = expenseRatio / 100;
 
-    return combined.map(item => {
+    return combined.map((item) => {
       const unitFob = item.qty > 0 ? item.lineFob / item.qty : 0;
-      const allocatedOverhead = item.lineFob * ratio;
-      const landedTotal = item.lineFob + allocatedOverhead;
+      const allocatedOverhead = item.lineFobBase * ratio;
+      const landedTotal = item.lineFobBase + allocatedOverhead;
       const landedPerUnit = item.qty > 0 ? landedTotal / item.qty : 0;
-
       return {
         ...item,
         unitFob,
         allocatedOverhead,
         landedTotal,
-        landedPerUnit
+        landedPerUnit,
       };
-    });
-  }, [selectedShipment, expenseRatio]);
+    }).map((item) => item);
+  }, [sourceLines, chargeCurrencies, expenses.exchangeRate, expenseRatio, docCurrency]);
 
   // ─── Auto-fill Total FOB and Logistics from Shipment ──────────────────────────────────────
 
@@ -267,9 +419,13 @@ const CostingReportView = () => {
 
     const shipment = shipments.find(s => s.id === shipmentId);
     if (shipment) {
+      const code = currencyCode(shipment.currency || shipment.supplier?.currency);
+      setChargeCurrencies((shipment as any).chargeCurrencies || defaultChargeCurrencies(code));
       const total = shipment.items?.reduce((sum: number, item: any) =>
         sum + (Number(item.unitPrice) * Number(item.qty)), 0
       ) || 0;
+      const savedRate = Number(shipment.exchangeRate) || 0;
+      setRateManual(savedRate > 0);
       setExpenses({ 
         totalFob: Math.round(total * 100) / 100,
         fobCharge: Number(shipment.fobCharge) || 0,
@@ -281,7 +437,7 @@ const CostingReportView = () => {
         zabs: Number(shipment.zabs) || 0,
         overweight: Number(shipment.overweight) || 0,
         bankCharges: Number(shipment.bankCharges) || 0,
-        exchangeRate: Number(shipment.exchangeRate) || 1
+        exchangeRate: savedRate || expenses.exchangeRate || 1
       });
       
       setLogistics({
@@ -291,6 +447,7 @@ const CostingReportView = () => {
         tpt: shipment.freight || '',
         truck: shipment.truckNumber || ''
       });
+      if (shipment.purchaseInvoiceId) setSelectedInvoiceId(shipment.purchaseInvoiceId);
     }
   }, [shipments]);
 
@@ -301,8 +458,24 @@ const CostingReportView = () => {
     if (field === 'bankCharges') {
       setAutoBankCharges(false);
     }
+    if (field === 'exchangeRate') {
+      setRateManual(true);
+    }
     setExpenses(prev => ({ ...prev, [field]: num }));
   }, []);
+
+  const updateChargeCurrency = useCallback((field: string, code: string) => {
+    setChargeCurrencies((prev) => ({ ...prev, [field]: currencyCode(code) }));
+  }, []);
+
+  const filteredInvoices = useMemo(() => {
+    if (!invoiceSearch) return purchaseInvoices;
+    const q = invoiceSearch.toLowerCase();
+    return purchaseInvoices.filter((inv: any) =>
+      inv.reference?.toLowerCase().includes(q) ||
+      (inv.supplier || inv.suppliers?.name || '').toLowerCase().includes(q)
+    );
+  }, [purchaseInvoices, invoiceSearch]);
 
   // Filtered Shipments for search
   const filteredShipments = useMemo(() => {
@@ -318,28 +491,37 @@ const CostingReportView = () => {
   // ─── Save Landed Costs ─────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
-    if (allocatedItems.length === 0 || !selectedShipment) {
-      alert('Select a Shipment and ensure items are allocated before saving.');
+    if (allocatedItems.length === 0 || (!selectedInvoice && !selectedShipment)) {
+      alert('Select a purchase invoice (or shipment) and ensure items are allocated before saving.');
       return;
     }
     setSaving(true);
     setSaveSuccess(false);
     try {
+      const fobBaseTotal = allocatedItems.reduce((s, i) => s + (i.lineFobBase || 0), 0) || 1;
       const items = allocatedItems.map((item: any) => {
+        const share = (item.lineFobBase || 0) / fobBaseTotal;
         return {
           itemId: item.itemId || '',
           poLineId: item.id,
           receivedQty: item.qty,
-          purchaseCost: item.lineFob,
-          freightAllocation: expenses.freight > 0 ? (item.lineFob / expenses.totalFob) * expenses.freight : 0,
-          customsAllocation: expenses.duty > 0 ? (item.lineFob / expenses.totalFob) * expenses.duty : 0,
-          otherCharges: item.allocatedOverhead - ((item.lineFob / expenses.totalFob) * expenses.freight) - ((item.lineFob / expenses.totalFob) * expenses.duty),
+          purchaseCost: item.lineFobBase,
+          freightAllocation: chargeToBase(expenses.freight, chargeCurrencies.freight, expenses.exchangeRate) * share,
+          customsAllocation: chargeToBase(expenses.duty, chargeCurrencies.duty, expenses.exchangeRate) * share,
+          otherCharges: item.allocatedOverhead - (chargeToBase(expenses.freight, chargeCurrencies.freight, expenses.exchangeRate) * share) - (chargeToBase(expenses.duty, chargeCurrencies.duty, expenses.exchangeRate) * share),
           landedCost: item.landedTotal,
           costPerUnit: item.landedPerUnit
         };
       }).filter((i: any) => i.itemId);
 
-      await apiService.saveLandedCosts(selectedShipment.id, expenses, items);
+      await apiService.saveLandedCosts({
+        shipmentId: selectedShipment?.id,
+        purchaseInvoiceId: selectedInvoice?.id || selectedShipment?.purchaseInvoiceId,
+        expenses,
+        chargeCurrencies,
+        logistics,
+        items,
+      });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
@@ -348,20 +530,20 @@ const CostingReportView = () => {
     } finally {
       setSaving(false);
     }
-  }, [allocatedItems, selectedShipment, expenses]);
+  }, [allocatedItems, selectedShipment, selectedInvoice, expenses, chargeCurrencies, logistics]);
 
   // ─── Export to Excel (CSV) ─────────────────────────────────────────────
 
   const handleExportExcel = useCallback(() => {
     if (allocatedItems.length === 0) {
-      alert('No items to export. Select a Purchase Order first.');
+      alert('No items to export. Select a purchase invoice first.');
       return;
     }
 
-    const poRef = selectedShipment?.reference || 'LandedCost';
+    const poRef = selectedInvoice?.reference || selectedShipment?.reference || 'LandedCost';
     const headers = [
-      'Item Code', 'Description', `Unit FOB (${shipmentCurrency})`, 'Qty',
-      `Line FOB (${shipmentCurrency})`, `Overhead Allocation (${shipmentCurrency})`, `Landed Total (${shipmentCurrency})`, `Landed Cost / Unit (${shipmentCurrency})`
+      'Item Code', 'Description', `Unit FOB (${docCurrency})`, 'Qty',
+      `Line FOB (${docCurrency})`, `Line FOB (${BASE_CURRENCY})`, `Overhead (${BASE_CURRENCY})`, `Landed Total (${BASE_CURRENCY})`, `Landed / Unit (${BASE_CURRENCY})`
     ];
 
     const rows = allocatedItems.map(item => [
@@ -370,6 +552,7 @@ const CostingReportView = () => {
       item.unitFob.toFixed(2),
       item.qty,
       item.lineFob.toFixed(2),
+      (item.lineFobBase || 0).toFixed(2),
       item.allocatedOverhead.toFixed(2),
       item.landedTotal.toFixed(2),
       item.landedPerUnit.toFixed(2)
@@ -378,10 +561,12 @@ const CostingReportView = () => {
     // Add summary rows
     rows.push([]);
     rows.push(['SUMMARY']);
-    rows.push(['Total FOB', '', expenses.totalFob.toFixed(2)]);
-    rows.push(['Total Expenses', '', totalExpenses.toFixed(2)]);
+    rows.push([`Total FOB (${docCurrency})`, '', expenses.totalFob.toFixed(2)]);
+    rows.push([`Total FOB (${BASE_CURRENCY})`, '', totals.fobBase.toFixed(2)]);
+    rows.push([`Total Expenses (${BASE_CURRENCY})`, '', totalExpenses.toFixed(2)]);
+    rows.push(['Exchange rate', '', String(expenses.exchangeRate)]);
     rows.push(['Expense Ratio %', '', expenseRatio.toFixed(2) + '%']);
-    rows.push(['Grand Total', '', grandTotal.toFixed(2)]);
+    rows.push([`Grand Total (${BASE_CURRENCY})`, '', grandTotal.toFixed(2)]);
     rows.push([]);
     rows.push(['LOGISTICS']);
     rows.push(['Invoice', logistics.inv]);
@@ -398,18 +583,18 @@ const CostingReportView = () => {
     link.download = `${poRef}_Landed_Cost_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [allocatedItems, selectedShipment, expenses, logistics, totalExpenses, expenseRatio, grandTotal]);
+  }, [allocatedItems, selectedShipment, selectedInvoice, expenses, logistics, totalExpenses, expenseRatio, grandTotal, docCurrency, totals]);
 
   const handleExportPDF = useCallback(() => {
     if (allocatedItems.length === 0) {
-      alert('No items to export. Select a Purchase Order first.');
+      alert('No items to export. Select a purchase invoice first.');
       return;
     }
 
-    const poRef = selectedShipment?.reference || 'LandedCost';
+    const poRef = selectedInvoice?.reference || selectedShipment?.reference || 'LandedCost';
     const headers = [
-      'Item Code', 'Description', `Unit FOB (${shipmentCurrency})`, 'Qty',
-      `Line FOB (${shipmentCurrency})`, `Overhead (${shipmentCurrency})`, `Landed Total (${shipmentCurrency})`, `Landed / Unit (${shipmentCurrency})`
+      'Item Code', 'Description', `Unit FOB (${docCurrency})`, 'Qty',
+      `Line FOB (${BASE_CURRENCY})`, `Overhead (${BASE_CURRENCY})`, `Landed Total (${BASE_CURRENCY})`, `Landed / Unit (${BASE_CURRENCY})`
     ];
 
     const rows = allocatedItems.map(item => [
@@ -417,7 +602,7 @@ const CostingReportView = () => {
       item.itemName.trim(),
       item.unitFob.toFixed(2),
       item.qty,
-      item.lineFob.toFixed(2),
+      (item.lineFobBase || 0).toFixed(2),
       item.allocatedOverhead.toFixed(2),
       item.landedTotal.toFixed(2),
       item.landedPerUnit.toFixed(2)
@@ -432,7 +617,7 @@ const CostingReportView = () => {
     rows.push(['Grand Total', '', grandTotal.toFixed(2)]);
 
     exportToPDF(`Landed Cost Report - ${poRef}`, `${poRef}_Landed_Cost`, headers, rows);
-  }, [allocatedItems, selectedShipment, expenses, totalExpenses, expenseRatio, grandTotal]);
+  }, [allocatedItems, selectedShipment, selectedInvoice, expenses, totalExpenses, expenseRatio, grandTotal, docCurrency]);
 
   // ─── Render ────────────────────────────────────────────────────────────
 
@@ -446,13 +631,36 @@ const CostingReportView = () => {
             <span className="text-gray-400">Procurement Tools</span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Landed Cost Calculator</h1>
-          <p className="text-slate-500 text-sm">Calculate total landed costs by allocating shipment expenses across purchase order items</p>
+          <p className="text-slate-500 text-sm">Pick a purchase invoice, convert foreign charges at an editable rate, then add ZMW duty and ZABS</p>
         </div>
         <div className="flex items-center gap-3">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 flex flex-col justify-center shadow-sm">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">System Exchange Rate</span>
-                <span className="text-xs font-bold text-slate-700">{systemCurrency} 1 = LCY {systemExchangeRate}</span>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 shadow-sm min-w-[220px]">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                  <RefreshCcw size={10} /> Exchange rate (1 {docCurrency} = {BASE_CURRENCY})
+                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={docCurrency === BASE_CURRENCY ? 1 : expenses.exchangeRate}
+                    readOnly={docCurrency === BASE_CURRENCY}
+                    onChange={(e) => updateExpense('exchangeRate', e.target.value)}
+                    className={`w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-sm font-black text-slate-800 ${docCurrency === BASE_CURRENCY ? 'opacity-60 cursor-not-allowed' : ''}`}
+              />
+              {systemExchangeRate !== expenses.exchangeRate && docCurrency !== BASE_CURRENCY && (
+                    <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">sys {systemExchangeRate}</span>
+                  )}
+                </div>
             </div>
+            {selectedInvoiceId && (
+              <button
+                onClick={() => navigate(`/purchase-invoices/view/${selectedInvoiceId}`)}
+                className="px-4 py-2.5 bg-white text-[11px] font-black text-indigo-600 rounded-xl hover:bg-indigo-50 transition-all border border-indigo-200 uppercase tracking-widest"
+              >
+                View Invoice
+              </button>
+            )}
             <button
               onClick={handleExportExcel}
               disabled={allocatedItems.length === 0}
@@ -498,11 +706,71 @@ const CostingReportView = () => {
             <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <Ship size={16} />
             </div>
-            <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-700">Shipment Logistics</h2>
+            <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-700">Invoice & Logistics</h2>
           </div>
 
           <div className="relative">
-            <label className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 block mb-1.5">Shipment Reference</label>
+            <label className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 block mb-1.5">Purchase Invoice</label>
+            <div
+              onClick={() => { setInvoiceDropdownOpen(!invoiceDropdownOpen); setShipmentDropdownOpen(false); }}
+              className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-xl cursor-pointer hover:border-indigo-400 transition-colors"
+            >
+              <span className="text-xs font-bold text-slate-700">
+                {selectedInvoice
+                  ? `${selectedInvoice.reference} · ${selectedInvoice.supplier || selectedInvoice.suppliers?.name || ''}`
+                  : 'Select purchase invoice...'}
+              </span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform ${invoiceDropdownOpen ? 'rotate-180' : ''}`} />
+            </div>
+
+            {invoiceDropdownOpen && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={invoiceSearch}
+                      onChange={(e) => setInvoiceSearch(e.target.value)}
+                      placeholder="Search by reference or supplier..."
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:bg-white"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  {loadingInvoices ? (
+                    <div className="p-4 text-center text-xs text-slate-400 font-bold">Loading...</div>
+                  ) : filteredInvoices.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400 font-bold">No purchase invoices found</div>
+                  ) : (
+                    filteredInvoices.map((inv: any) => (
+                      <div
+                        key={inv.id}
+                        onClick={() => handleSelectInvoice(inv.id)}
+                        className={`px-4 py-3 cursor-pointer hover:bg-indigo-50 transition-colors border-b border-gray-50 last:border-0 ${
+                          inv.id === selectedInvoiceId ? 'bg-indigo-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-black text-slate-800">{inv.reference}</span>
+                            <span className="text-[10px] text-slate-400 ml-2 font-medium">{inv.supplier || inv.suppliers?.name}</span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            {currencyCode(inv.currency)} {Number(inv.grand_total || inv.invoiceAmount || 0).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <label className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 block mb-1.5">Shipment (optional)</label>
             <div
               onClick={() => setShipmentDropdownOpen(!shipmentDropdownOpen)}
               className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:border-blue-400 transition-colors"
@@ -612,77 +880,23 @@ const CostingReportView = () => {
               </div>
               <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-700">Expense Breakdown</h2>
             </div>
-            {selectedShipment && (
+            {selectedInvoice || selectedShipment ? (
               <div className="text-[10px] font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full uppercase tracking-widest">
-                Currency: {shipmentCurrency}
+                Document {docCurrency} · landed {BASE_CURRENCY}
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <InputField
-              label="Total FOB Value"
-              icon={DollarSign}
-              value={expenses.totalFob || ''}
-              onChange={(v) => updateExpense('totalFob', v)}
-
-            />
-            <InputField
-              label="FOB Charge"
-              icon={DollarSign}
-              value={expenses.fobCharge || ''}
-              onChange={(v) => updateExpense('fobCharge', v)}
-
-            />
-            <InputField
-              label="Freight"
-              icon={Ship}
-              value={expenses.freight || ''}
-              onChange={(v) => updateExpense('freight', v)}
-
-            />
-            <InputField
-              label="Insurance"
-              icon={ShieldCheck}
-              value={expenses.insurance || ''}
-              onChange={(v) => updateExpense('insurance', v)}
-
-            />
-            <InputField
-              label="Road Transport"
-              icon={Truck}
-              value={expenses.roadTransport || ''}
-              onChange={(v) => updateExpense('roadTransport', v)}
-
-            />
-            <InputField
-              label="Clearing Agent"
-              icon={Landmark}
-              value={expenses.clearingAgent || ''}
-              onChange={(v) => updateExpense('clearingAgent', v)}
-
-            />
-            <InputField
-              label="Duty"
-              icon={Scale}
-              value={expenses.duty || ''}
-              onChange={(v) => updateExpense('duty', v)}
-
-            />
-            <InputField
-              label="ZABS"
-              icon={FileText}
-              value={expenses.zabs || ''}
-              onChange={(v) => updateExpense('zabs', v)}
-
-            />
-            <InputField
-              label="Overweight"
-              icon={Package}
-              value={expenses.overweight || ''}
-              onChange={(v) => updateExpense('overweight', v)}
-
-            />
+            <ChargeField label="Total FOB Value" icon={DollarSign} value={expenses.totalFob || ''} currency={chargeCurrencies.totalFob} onAmount={(v) => updateExpense('totalFob', v)} onCurrency={(c) => updateChargeCurrency('totalFob', c)} currencies={currencies} />
+            <ChargeField label="FOB Charge" icon={DollarSign} value={expenses.fobCharge || ''} currency={chargeCurrencies.fobCharge} onAmount={(v) => updateExpense('fobCharge', v)} onCurrency={(c) => updateChargeCurrency('fobCharge', c)} currencies={currencies} />
+            <ChargeField label="Freight" icon={Ship} value={expenses.freight || ''} currency={chargeCurrencies.freight} onAmount={(v) => updateExpense('freight', v)} onCurrency={(c) => updateChargeCurrency('freight', c)} currencies={currencies} />
+            <ChargeField label="Insurance" icon={ShieldCheck} value={expenses.insurance || ''} currency={chargeCurrencies.insurance} onAmount={(v) => updateExpense('insurance', v)} onCurrency={(c) => updateChargeCurrency('insurance', c)} currencies={currencies} />
+            <ChargeField label="Road Transport" icon={Truck} value={expenses.roadTransport || ''} currency={chargeCurrencies.roadTransport} onAmount={(v) => updateExpense('roadTransport', v)} onCurrency={(c) => updateChargeCurrency('roadTransport', c)} currencies={currencies} />
+            <ChargeField label="Clearing Agent" icon={Landmark} value={expenses.clearingAgent || ''} currency={chargeCurrencies.clearingAgent} onAmount={(v) => updateExpense('clearingAgent', v)} onCurrency={(c) => updateChargeCurrency('clearingAgent', c)} currencies={currencies} />
+            <ChargeField label="Duty" icon={Scale} value={expenses.duty || ''} currency={chargeCurrencies.duty} onAmount={(v) => updateExpense('duty', v)} onCurrency={(c) => updateChargeCurrency('duty', c)} currencies={currencies} />
+            <ChargeField label="ZABS" icon={FileText} value={expenses.zabs || ''} currency={chargeCurrencies.zabs} onAmount={(v) => updateExpense('zabs', v)} onCurrency={(c) => updateChargeCurrency('zabs', c)} currencies={currencies} />
+            <ChargeField label="Overweight" icon={Package} value={expenses.overweight || ''} currency={chargeCurrencies.overweight} onAmount={(v) => updateExpense('overweight', v)} onCurrency={(c) => updateChargeCurrency('overweight', c)} currencies={currencies} />
           </div>
 
           {/* Bank Charges with auto-toggle */}
@@ -702,7 +916,7 @@ const CostingReportView = () => {
                 </div>
               </label>
             </div>
-            <div className="relative flex items-center">
+            <div className="relative flex items-center gap-2">
               <input
                 type="number"
                 step="0.01"
@@ -715,6 +929,15 @@ const CostingReportView = () => {
                 placeholder="0.00"
                 className="w-full max-w-xs px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               />
+              <select
+                value={currencyCode(chargeCurrencies.bankCharges)}
+                onChange={(e) => updateChargeCurrency('bankCharges', e.target.value)}
+                className="w-[88px] shrink-0 px-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-wider"
+              >
+                {(currencies.length ? currencies : [{ code: 'ZMW' }, { code: 'USD' }]).map((c) => (
+                  <option key={c.code} value={c.code}>{c.code}</option>
+                ))}
+              </select>
               {autoBankCharges && (
                 <span className="ml-3 text-[10px] font-bold text-blue-500 flex items-center gap-1">
                   <Percent size={10} /> 1.5% of (FOB + FOB Charge + Freight + Insurance + Duty)
@@ -732,8 +955,11 @@ const CostingReportView = () => {
             <DollarSign size={24} />
           </div>
           <div>
-            <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total FOB</div>
-            <div className="text-xl font-black text-slate-900">{fmt(expenses.totalFob)}</div>
+            <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total FOB ({BASE_CURRENCY})</div>
+            <div className="text-xl font-black text-slate-900">{fmt(totals.fobBase)}</div>
+            {docCurrency !== BASE_CURRENCY && (
+              <div className="text-[10px] font-bold text-slate-400">{docCurrency} {fmt(expenses.totalFob)} × {expenses.exchangeRate}</div>
+            )}
           </div>
         </div>
 
@@ -742,7 +968,7 @@ const CostingReportView = () => {
             <TrendingUp size={24} />
           </div>
           <div>
-            <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Expenses</div>
+            <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Expenses ({BASE_CURRENCY})</div>
             <div className="text-xl font-black text-slate-900">{fmt(totalExpenses)}</div>
           </div>
         </div>
@@ -762,7 +988,7 @@ const CostingReportView = () => {
             <Landmark size={24} />
           </div>
           <div>
-            <div className="text-[9px] font-black uppercase tracking-wider text-blue-200">Grand Total</div>
+            <div className="text-[9px] font-black uppercase tracking-wider text-blue-200">Grand Total ({BASE_CURRENCY})</div>
             <div className="text-xl font-black text-white">{fmt(grandTotal)}</div>
           </div>
         </div>
@@ -781,7 +1007,7 @@ const CostingReportView = () => {
                   Item Cost Allocation
                 </h2>
                 <p className="text-[10px] text-slate-400 font-medium">
-                  Select a Purchase Order to allocate expenses proportionally across its items
+                  Convert each charge to {BASE_CURRENCY}, then allocate by FOB share
                 </p>
               </div>
             </div>
@@ -797,12 +1023,12 @@ const CostingReportView = () => {
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
                 <th className="px-6 py-4">Item Code</th>
                 <th className="px-6 py-4">Description</th>
-                <th className="px-6 py-4 text-right">Unit FOB ({shipmentCurrency})</th>
+                <th className="px-6 py-4 text-right">Unit FOB ({docCurrency})</th>
                 <th className="px-6 py-4 text-right">Qty</th>
-                <th className="px-6 py-4 text-right">Line FOB ({shipmentCurrency})</th>
-                <th className="px-6 py-4 text-right">Overhead Alloc ({shipmentCurrency})</th>
-                <th className="px-6 py-4 text-right">Landed Total ({shipmentCurrency})</th>
-                <th className="px-6 py-4 text-right">Landed / Unit ({shipmentCurrency})</th>
+                <th className="px-6 py-4 text-right">Line FOB ({BASE_CURRENCY})</th>
+                <th className="px-6 py-4 text-right">Overhead Alloc ({BASE_CURRENCY})</th>
+                <th className="px-6 py-4 text-right">Landed Total ({BASE_CURRENCY})</th>
+                <th className="px-6 py-4 text-right">Landed / Unit ({BASE_CURRENCY})</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -813,7 +1039,7 @@ const CostingReportView = () => {
                     <td className="px-6 py-4 text-xs font-bold text-slate-700">{item.itemName}</td>
                     <td className="px-6 py-4 text-right text-xs font-bold text-slate-600">{fmt(item.unitFob)}</td>
                     <td className="px-6 py-4 text-center text-xs font-black text-slate-600">{item.qty}</td>
-                    <td className="px-6 py-4 text-right text-xs font-bold text-slate-600">{fmt(item.lineFob)}</td>
+                    <td className="px-6 py-4 text-right text-xs font-bold text-slate-600">{fmt(item.lineFobBase)}</td>
                     <td className="px-6 py-4 text-right text-xs font-bold text-amber-600">{fmt(item.allocatedOverhead)}</td>
                     <td className="px-6 py-4 text-right text-xs font-black text-slate-900">{fmt(item.landedTotal)}</td>
                     <td className="px-6 py-4 text-right">
@@ -832,7 +1058,9 @@ const CostingReportView = () => {
                       </div>
                       <div>
                         <p className="text-xs font-bold text-slate-400">
-                          {selectedShipmentId ? 'No items found in this Shipment' : 'Select a Shipment above to allocate costs'}
+                          {selectedInvoiceId || selectedShipmentId
+                            ? 'No items found on this invoice or shipment'
+                            : 'Select a purchase invoice above to allocate costs'}
                         </p>
                         <p className="text-[10px] text-slate-300 mt-1 font-medium">
                           Expense ratio will be applied proportionally to each item's FOB value
@@ -850,7 +1078,7 @@ const CostingReportView = () => {
                     Totals
                   </td>
                   <td className="px-6 py-4 text-right text-xs font-black text-slate-800">
-                    {fmt(allocatedItems.reduce((s, i) => s + i.lineFob, 0))}
+                    {fmt(allocatedItems.reduce((s, i) => s + (i.lineFobBase || 0), 0))}
                   </td>
                   <td className="px-6 py-4 text-right text-xs font-black text-amber-700">
                     {fmt(allocatedItems.reduce((s, i) => s + i.allocatedOverhead, 0))}

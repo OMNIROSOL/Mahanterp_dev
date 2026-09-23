@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import Badge from '../components/shared/Badge';
 import { cn } from '../utils/cn';
+import DocumentPrintHeader, { DOCUMENT_PRINT_CSS } from '../components/shared/DocumentPrintHeader';
 
 const ViewSalesQuoteView = () => {
     const { id } = useParams();
@@ -167,9 +168,9 @@ const ViewSalesQuoteView = () => {
     };
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6]/50 flex flex-col font-sans">
+        <div className="min-h-screen bg-slate-100/50 flex flex-col font-sans">
             {/* Compact Action Toolbar - Matching Customer View */}
-            <div className="bg-[#f8fafc] border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
+            <div className="bg-slate-50 border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
                 <div className="flex items-center space-x-3">
                     <button
                         onClick={() => navigate('/sales-quotes')}
@@ -432,50 +433,12 @@ const ViewSalesQuoteView = () => {
 
             <div className="flex-1 p-6 flex justify-start overflow-auto print:p-0">
                 <div className="print-container bg-white shadow-xl p-12 w-[850px] max-w-full text-[13px] text-gray-800 relative" ref={pdfRef}>
-                    <style>{`
-                        @media print {
-                            @page { margin: 10mm; size: auto; }
-                            html, body, #root, #root > div, main { 
-                                background: white !important; 
-                                padding: 0 !important; 
-                                -webkit-print-color-adjust: exact !important; 
-                                print-color-adjust: exact !important;
-                                font-family: sans-serif !important; 
-                                height: auto !important; 
-                                min-height: none !important; 
-                                overflow: visible !important; 
-                                display: block !important; 
-                            }
-                            .no-print, nav, aside, header, .nav-bar, .side-bar, button, .breadcrumb-bar { display: none !important; }
-                            .print-container { 
-                                border: none !important; 
-                                box-shadow: none !important; 
-                                max-width: none !important; 
-                                width: 100% !important; 
-                                position: static !important;
-                                padding: 48px !important;
-                                background: white !important;
-                                margin: 0 !important;
-                            }
-                            .print-bg-slate-50 {
-                                background-color: #f8fafc !important;
-                                -webkit-print-color-adjust: exact !important;
-                                print-color-adjust: exact !important;
-                            }
-                        }
-                    `}</style>
+                    <style>{DOCUMENT_PRINT_CSS}</style>
 
-                    <div className="flex justify-between items-start gap-12 mb-10 pb-10 border-b border-gray-100">
-                        <div className="flex-1">
-                            {/* Header Section */}
-                            <div className="mb-6">
-                                <div className="flex justify-between items-start mb-1">
-                                    <h1 className="text-xl font-bold text-slate-900 tracking-tight uppercase leading-none">
-                                        {(quote.docOptions?.customTitle && quote.docOptions?.customTitleValue) ? quote.docOptions.customTitleValue : (quote.customTitle || 'Sales Quotation')}
-                                    </h1>
-                                </div>
-                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Reference: {quote.reference}</p>
-                            </div>
+                    <DocumentPrintHeader
+                        title={(quote.docOptions?.customTitle && quote.docOptions?.customTitleValue) ? quote.docOptions.customTitleValue : (quote.customTitle || 'Sales Quotation')}
+                        reference={quote.reference}
+                    />
 
                             <div className="grid grid-cols-2 gap-12 items-start">
                                 {/* Billed To */}
@@ -510,19 +473,12 @@ const ViewSalesQuoteView = () => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-
-                        {/* Company Logo - Large and Span across Header+Details */}
-                        <div className="w-[180px] shrink-0 pt-2">
-                            <img src="/logo.png" alt="Company Logo" className="w-full object-contain" />
-                        </div>
                     </div>
 
                     {/* Items Table */}
                     <div className="mb-14">
                         <table className="w-full text-left">
-                            <thead className="bg-[#f8fafc] border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
+                            <thead className="bg-slate-50 border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
                                 <tr>
                                     {quote.docOptions?.columnLineNumber !== false && <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-12">#</th>}
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Item</th>
@@ -585,11 +541,11 @@ const ViewSalesQuoteView = () => {
                         {!quote.docOptions?.hideTotalAmount && (
                             <div className="w-80 space-y-3">
                                 <div className="flex justify-between items-center text-gray-500">
-                                    <span className="text-[11px] font-bold uppercase tracking-widest">{quote.docOptions?.amountsAreTaxInclusive ? 'Subtotal (Excl. Tax)' : 'Subtotal'}</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-widest">{quote.docOptions?.amountsAreTaxInclusive ? 'Net (excl. VAT)' : 'Subtotal'}</span>
                                     <span className="font-semibold">{totals.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-gray-500">
-                                    <span className="text-[11px] font-bold uppercase tracking-widest">Tax Component {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-widest">{quote.docOptions?.amountsAreTaxInclusive ? 'VAT' : 'Tax Component'} {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                     <span className="font-semibold">{totals.tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                 </div>
                                 {quote.docOptions?.withholdingTax && (
@@ -624,7 +580,7 @@ const ViewSalesQuoteView = () => {
                 </div>
             </div>
 
-            <div className="bg-[#f3f4f6] px-8 py-4 border-t border-gray-200 flex justify-end no-print">
+            <div className="bg-slate-100 px-8 py-4 border-t border-gray-200 flex justify-end no-print">
                 <div className="flex space-x-2">
                     <button onClick={() => navigate(`/sales-quotes/print-batch?ids=${quote.id}`)} className="bg-white border border-gray-300 px-6 py-2 text-[11px] font-bold text-gray-700 rounded-md shadow-sm hover:bg-gray-50 transition uppercase tracking-widest flex items-center gap-2">
                         <Printer size={14} /> Print

@@ -99,6 +99,8 @@ import ViewInterAccountTransferView from './views/ViewInterAccountTransferView';
 import ExpenseClaimsView from './views/ExpenseClaimsView';
 import NewExpenseClaimView from './views/NewExpenseClaimView';
 import ExpenseClaimPayersView from './views/ExpenseClaimPayersView';
+import EmployeesView from './views/EmployeesView';
+import NewEmployeeView from './views/NewEmployeeView';
 
 // Purchase Imports
 import SuppliersView from './views/SuppliersView';
@@ -146,6 +148,10 @@ import WithholdingTaxView from './views/WithholdingTaxView';
 import RoleManagementView from './views/RoleManagementView';
 import SettingsView from './views/SettingsView';
 import SettingsFootersView from './views/SettingsFootersView';
+import SettingsApprovalsView from './views/SettingsApprovalsView';
+import SettingsCompanyView from './views/SettingsCompanyView';
+import BankReconciliationView from './views/BankReconciliationView';
+import DataImportView from './views/DataImportView';
 import DivisionsView from './views/DivisionsView';
 import EditSupplierColumnsView from './views/EditSupplierColumnsView';
 import NewSupplierView from './views/NewSupplierView';
@@ -250,6 +256,9 @@ const App = () => {
           <Route path="/settings/withholding-taxes" element={<WithholdingTaxView />} />
           <Route path="/settings/role-management" element={<RoleManagementView />} />
           <Route path="/settings/footers" element={<SettingsFootersView />} />
+          <Route path="/settings/company" element={<SettingsCompanyView />} />
+          <Route path="/settings/approvals" element={<SettingsApprovalsView />} />
+          <Route path="/settings/data-import" element={<DataImportView />} />
           <Route path="/settings/divisions" element={<DivisionsView />} />
           <Route path="/settings/currencies" element={<SettingsCurrenciesView />} />
           <Route path="/settings/exchange-rates" element={<ExchangeRatesView />} />
@@ -282,6 +291,10 @@ const App = () => {
           <Route path="/master/income-items" element={<IncomeItemsView />} />
           <Route path="/master/expense-items" element={<ExpenseItemsView />} />
           <Route path="/master/categories" element={<ItemCategoriesView />} />
+          <Route path="/employees" element={<EmployeesView />} />
+          <Route path="/employees/new" element={<NewEmployeeView />} />
+          <Route path="/employees/edit/:id" element={<NewEmployeeView />} />
+          <Route path="/employees/view/:id" element={<NewEmployeeView />} />
 
           {/* Bank & Cash Routes */}
           <Route path="/account" element={<BankAccountsView />} />
@@ -289,6 +302,7 @@ const App = () => {
           <Route path="/account/view/:id" element={<ViewBankAccountView />} />
           <Route path="/account/edit/:id" element={<EditBankAccountView />} />
           <Route path="/account/edit-columns" element={<EditBankAccountColumnsView />} />
+          <Route path="/bank-reconciliation" element={<BankReconciliationView />} />
 
           {/* Customer Routes */}
           <Route path="/customers" element={<CustomersView />} />
@@ -431,6 +445,7 @@ const App = () => {
           <Route path="/expense-claims" element={<ExpenseClaimsView />} />
           <Route path="/expense-claims/new" element={<NewExpenseClaimView />} />
           <Route path="/expense-claims/edit/:id" element={<NewExpenseClaimView />} />
+          <Route path="/expense-claims/view/:id" element={<NewExpenseClaimView />} />
           <Route path="/expense-claim-payers" element={<ExpenseClaimPayersView />} />
 
           {/* Approvals Routes */}

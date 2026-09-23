@@ -24,10 +24,10 @@ const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const variants = {
-    primary: 'bg-[#4F46E5] text-white hover:bg-[#4338ca] shadow-sm',
-    secondary: 'bg-[#F3F4F6] text-[#374151] hover:bg-[#E5E7EB]',
-    outline: 'bg-transparent border border-[#D1D5DB] text-[#374151] hover:bg-[#F9FAFB]',
-    ghost: 'bg-transparent text-[#4B5563] hover:bg-[#F3F4F6]',
+    primary: 'bg-primary text-white hover:bg-primary-dark shadow-sm',
+    secondary: 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+    outline: 'bg-transparent border border-slate-300 text-slate-700 hover:bg-slate-50',
+    ghost: 'bg-transparent text-slate-600 hover:bg-slate-100',
     danger: 'bg-red-600 text-white hover:bg-red-700 shadow-sm',
     success: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
   };

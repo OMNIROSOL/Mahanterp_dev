@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import apiService from '../services/apiService';
 import { Account, InventoryItem, Receipt as ReceiptType } from '../types';
+import { CurrencyRateFields, BaseEquivalent } from '../components/shared/CurrencyRateFields';
+import DocumentAttachments from '../components/shared/DocumentAttachments';
+import { currencyCode } from '../utils/currency';
 import {
     Receipt, ChevronRight, Calculator, ChevronDown,
     Copy, X, Plus, Calendar, Hash, User, Briefcase,
     Landmark, CreditCard, Trash2, Save, Undo2,
-    CheckCircle2, Info, Image as ImageIcon, Download,
-    ChevronUp, Settings, CheckSquare, Eye
+    CheckCircle2, Info, Settings, CheckSquare, Eye
 } from 'lucide-react';
 import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
@@ -124,7 +126,6 @@ const NewReceiptView = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const dateInputRef = useRef<HTMLInputElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [isLoading, setIsLoading] = useState(true);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -142,11 +143,15 @@ const NewReceiptView = () => {
     const [description, setDescription] = useState('');
     const [saveError, setSaveError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [currency, setCurrency] = useState('ZMW');
+    const [exchangeRate, setExchangeRate] = useState(1);
+    const [rateManual, setRateManual] = useState(false);
+    const [currencies, setCurrencies] = useState<any[]>([]);
 
     const [items, setItems] = useState<ReceiptLine[]>([{ id: Date.now(), role: 'settlement', item: '', account: 'Accounts Receivable', description: '', qty: '1', discount: '', amount: '', total: '0' }]);
     const [settlementAccount, setSettlementAccount] = useState('Accounts Receivable');
     const [advanceAccount, setAdvanceAccount] = useState('Customer advances');
-    const [fileName, setFileName] = useState('No file chosen');
+    const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
     const [options, setOptions] = useState({
         taxInclusive: false,
@@ -177,16 +182,18 @@ const NewReceiptView = () => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const [accs, txItems, custs, supps] = await Promise.all([
+                const [accs, txItems, custs, supps, currs] = await Promise.all([
                     apiService.getAccounts(),
                     apiService.getTransactionItems(),
                     apiService.getCustomers(),
-                    apiService.getSuppliers()
+                    apiService.getSuppliers(),
+                    apiService.getCurrencies().catch(() => [])
                 ]);
                 setAccounts(accs);
                 setIncomeItems(txItems.filter((i: any) => i.type === 'Income'));
                 setCustomers(custs);
                 setSuppliers(supps);
+                setCurrencies(currs || []);
 
                 const banks = paymentAccounts(accs);
                 const arName = arAccountName(accs);
@@ -205,15 +212,24 @@ const NewReceiptView = () => {
                             if (matchedCustomer) {
                                 setPaidByContact('Customer');
                                 setPaidByCustomerId(matchedCustomer.id);
+                                setCurrency(currencyCode(receipt.currency || matchedCustomer.currency));
                             } else if (supps.some((s: any) => s.name === receipt.paidByContact)) {
                                 setPaidByContact('Supplier');
+                                const matchedSupplier = supps.find((s: any) => s.name === receipt.paidByContact);
+                                setCurrency(currencyCode(receipt.currency || matchedSupplier?.currency));
                             } else {
                                 setPaidByContact('Other');
+                                setCurrency(currencyCode(receipt.currency));
                             }
                             setPaidByOptional(receipt.paidByContact);
                         } else {
                             setPaidByContact('Customer');
                             setPaidByOptional('');
+                        }
+                        const savedRate = Number(receipt.exchangeRate);
+                        if (savedRate > 0) {
+                            setExchangeRate(savedRate);
+                            setRateManual(true);
                         }
                         setReceivedInAccount(receipt.receivedInAccount || banks[0]?.name || '');
                         setDescription(receipt.description || '');
@@ -268,6 +284,24 @@ const NewReceiptView = () => {
         };
         fetchData();
     }, [id]);
+
+    useEffect(() => {
+        const fetchRate = async () => {
+            try {
+                if (!currency || currency === 'ZMW') {
+                    setExchangeRate(1);
+                    return;
+                }
+                if (rateManual) return;
+                const rateData = await apiService.getExchangeRateAtDate(date, currency);
+                setExchangeRate(rateData.rate || 1);
+            } catch (e) {
+                console.error('Failed to load exchange rate:', e);
+                if (!rateManual) setExchangeRate(1);
+            }
+        };
+        fetchRate();
+    }, [currency, date, rateManual]);
 
     useEffect(() => {
         const loadCustomerInvoices = async () => {
@@ -454,6 +488,8 @@ const NewReceiptView = () => {
                 setPaidByOptional(match.name);
                 setPaidByCustomerId(match.id);
                 setPaidByContact('Customer');
+                setCurrency(currencyCode(match.currency));
+                setRateManual(false);
             } else {
                 setPaidByOptional(customer);
                 setPaidByContact('Customer');
@@ -501,11 +537,6 @@ const NewReceiptView = () => {
             customerAdvance: Number(selectedCustomer?.advance || 0),
         };
     }, [items, options, withholdingTaxRate, withholdingTaxMethod, unpaidInvoices, allocations]);
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        setFileName(file ? file.name : 'No file chosen');
-    };
 
     const handleSave = async () => {
         setSaveError('');
@@ -582,7 +613,8 @@ const NewReceiptView = () => {
             receivedInAccount: receivedInAccount,
             description,
             amount: saveItems.reduce((sum, it) => sum + (it.total || 0), 0) || (parseFloat(fixedTotalValue) || 0),
-            currency: 'ZMW',
+            currency,
+            exchangeRate,
             status: options.cancelled ? 'Cancelled' : 'Completed',
             items: saveItems.map((it) => ({
                 ...it,
@@ -595,10 +627,17 @@ const NewReceiptView = () => {
 
         try {
             setIsSaving(true);
+            let savedId = id;
             if (id) {
                 await apiService.updateReceipt(id, receiptData);
             } else {
-                await apiService.createReceipt(receiptData);
+                const created = await apiService.createReceipt(receiptData);
+                savedId = created?.id;
+            }
+            if (savedId && pendingFiles.length) {
+                for (const file of pendingFiles) {
+                    await apiService.uploadAttachment('receipt', savedId, file);
+                }
             }
             navigate('/receipts');
         } catch (err: any) {
@@ -680,6 +719,20 @@ const NewReceiptView = () => {
                             <InputField label="Overall Description" value={description} onChange={(e: any) => setDescription(e.target.value)} placeholder="What was this payment for?" Icon={Briefcase} />
                         </div>
 
+                        <CurrencyRateFields
+                            currency={currency}
+                            exchangeRate={exchangeRate}
+                            currencies={currencies}
+                            onCurrencyChange={(code) => {
+                                setCurrency(code);
+                                setRateManual(false);
+                            }}
+                            onRateChange={(rate) => {
+                                setExchangeRate(rate);
+                                setRateManual(true);
+                            }}
+                        />
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Paid By</label>
@@ -711,6 +764,8 @@ const NewReceiptView = () => {
                                                 const customer = customers.find((c: any) => c.id === nextId);
                                                 setPaidByCustomerId(nextId);
                                                 setPaidByOptional(customer?.name || '');
+                                                setCurrency(currencyCode(customer?.currency));
+                                                setRateManual(false);
                                             }}
                                             className="flex-1 bg-transparent px-5 py-3 text-[13px] font-semibold text-slate-700 outline-none appearance-none"
                                         >
@@ -720,7 +775,13 @@ const NewReceiptView = () => {
                                     ) : paidByContact === 'Supplier' ? (
                                         <select
                                             value={paidByOptional}
-                                            onChange={(e) => setPaidByOptional(e.target.value)}
+                                            onChange={(e) => {
+                                                const name = e.target.value;
+                                                const supplier = suppliers.find((s: any) => s.name === name);
+                                                setPaidByOptional(name);
+                                                setCurrency(currencyCode(supplier?.currency));
+                                                setRateManual(false);
+                                            }}
                                             className="flex-1 bg-transparent px-5 py-3 text-[13px] font-semibold text-slate-700 outline-none appearance-none"
                                         >
                                             <option value="">Select Supplier...</option>
@@ -771,7 +832,7 @@ const NewReceiptView = () => {
                                     <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase">Customer Invoices</h2>
                                     <p className="text-[12px] text-slate-500 mt-1">
                                         {paidByOptional}: {unpaidInvoices.length} unpaid of {customerInvoices.length} invoices.
-                                        Outstanding ZMW {formatMoney(calculations.outstanding)}.
+                                        Outstanding {currency} {formatMoney(calculations.outstanding)}.
                                     </p>
                                 </div>
                                 {unpaidInvoices.length > 0 && (
@@ -855,8 +916,8 @@ const NewReceiptView = () => {
                                         </tbody>
                                     </table>
                                     <div className="flex justify-end gap-8 px-4 py-3 bg-slate-50 text-[12px] font-semibold text-slate-600">
-                                        <span>Applying ZMW {formatMoney(calculations.applied)}</span>
-                                        <span>Unallocated ZMW {formatMoney(calculations.unallocated)}</span>
+                                        <span>Applying {currency} {formatMoney(calculations.applied)}</span>
+                                        <span>Unallocated {currency} {formatMoney(calculations.unallocated)}</span>
                                     </div>
                                 </div>
                             )}
@@ -1010,7 +1071,7 @@ const NewReceiptView = () => {
                                             )}
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center justify-end gap-1">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase">ZMW</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase">{currency}</span>
                                                     <input
                                                         type="text"
                                                         inputMode="decimal"
@@ -1037,7 +1098,7 @@ const NewReceiptView = () => {
                         <div className="flex justify-end pt-4 pr-14">
                             <div className="w-full max-w-sm space-y-3">
                                 <div className="flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                    <span>Subtotal (ZMW)</span>
+                                    <span>Subtotal ({currency})</span>
                                     <span className="text-slate-700 font-bold tabular-nums text-[13px]">
                                         {calculations.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>
@@ -1068,10 +1129,11 @@ const NewReceiptView = () => {
                                         <div className="h-px bg-white/10 w-full mt-2"></div>
                                     </div>
                                     <h2 className="text-2xl font-black text-white tracking-tight tabular-nums flex items-baseline">
-                                        <span className="text-[10px] font-black text-indigo-200 mr-2 uppercase tracking-widest">ZMW</span>
+                                        <span className="text-[10px] font-black text-indigo-200 mr-2 uppercase tracking-widest">{currency}</span>
                                         {calculations.finalTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </h2>
                                 </div>
+                                <BaseEquivalent amount={calculations.finalTotal} currency={currency} exchangeRate={exchangeRate} />
                             </div>
                         </div>
                     </section>
@@ -1116,7 +1178,7 @@ const NewReceiptView = () => {
                                                 </SelectField>
                                                 <div className="flex-1">
                                                     <InputField
-                                                        label={withholdingTaxMethod === 'Rate' ? 'Rate (%)' : 'Fixed Amount (ZMW)'}
+                                                        label={withholdingTaxMethod === 'Rate' ? 'Rate (%)' : `Fixed Amount (${currency})`}
                                                         value={withholdingTaxRate}
                                                         onChange={(e: any) => setWithholdingTaxRate(e.target.value)}
                                                         placeholder="0.00"
@@ -1144,25 +1206,15 @@ const NewReceiptView = () => {
                         </AnimatePresence>
                     </section>
 
-                    {/* Attachment Section */}
                     <section className="space-y-8 pt-8 border-t border-slate-50">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500">
-                                <ImageIcon size={20} />
-                            </div>
-                            <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase">Attachment / Proof</h2>
-                        </div>
-                        <div className="max-w-[600px] p-8 border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50/30 flex items-center gap-6 hover:bg-slate-50 hover:border-indigo-300 transition-all cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
-                            <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center text-slate-300 group-hover:text-indigo-500 transition-colors">
-                                <Download size={24} />
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-[14px] font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">{fileName === 'No file chosen' ? 'Upload Receipt Proof' : fileName}</p>
-                                <p className="text-[10px] font-medium text-slate-400">PDF, PNG or JPG max 10MB</p>
-                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,.pdf" />
-                            </div>
-                            <button className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-black text-slate-500 uppercase tracking-widest hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all shadow-sm">Select</button>
-                        </div>
+                        <DocumentAttachments
+                            documentType="receipt"
+                            documentId={id}
+                            pendingFiles={pendingFiles}
+                            onPendingFilesChange={setPendingFiles}
+                            title="Attachment / Proof"
+                            hint="PDF, JPG, PNG or Excel — max 10MB"
+                        />
                     </section>
                 </div>
 

@@ -55,6 +55,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, path, isCo
     <div className="px-3 py-1">
       <NavLink
         to={path}
+        end={path === '/'}
         className={({ isActive }) => cn(
           "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group",
           isActive
@@ -150,10 +151,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       submenu: [
         { label: 'Summary', path: '/summary', id: 'summary' },
         { label: 'Bank and Cash Accounts', path: '/account', id: 'bank-accounts' },
+        { label: 'Bank Reconciliation', path: '/bank-reconciliation', id: 'bank-reconciliation' },
         { label: 'Receipts', path: '/receipts', id: 'receipts' },
         { label: 'Payments', path: '/payments', id: 'payments' },
         { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers' },
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims' },
+        { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers' },
       ]
     },
     {
@@ -164,6 +167,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       submenu: [
         { label: 'Income Items', path: '/master/income-items', id: 'income-items' },
         { label: 'Expense Items', path: '/master/expense-items', id: 'expense-items' },
+        { label: 'Employees', path: '/employees', id: 'employees' },
         { label: 'Units of Measure', path: '/master/units', id: 'units' },
         { label: 'Item Categories', path: '/master/categories', id: 'categories' },
       ]

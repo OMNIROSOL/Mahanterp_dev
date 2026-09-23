@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import apiService from '../services/apiService';
 import { ArrowLeft, Save, Plus, Trash2, HelpCircle } from 'lucide-react';
 import Button from '../components/shared/Button';
@@ -7,6 +7,8 @@ import Button from '../components/shared/Button';
 const NewExpenseClaimView = () => {
     const navigate = useNavigate();
     const { id } = useParams();
+    const location = useLocation();
+    const isView = location.pathname.includes('/view/');
     const isEditing = !!id;
 
     const [isLoading, setIsLoading] = useState(false);
@@ -131,16 +133,18 @@ const NewExpenseClaimView = () => {
                             <div className="flex items-center gap-2 mb-1">
                                 <span className="text-blue-600 text-xs font-bold uppercase tracking-widest">Expense Claims</span>
                             </div>
-                            <h1 className="text-3xl font-black text-slate-900 tracking-tight">{isEditing ? 'Edit Expense Claim' : 'New Expense Claim'}</h1>
+                            <h1 className="text-3xl font-black text-slate-900 tracking-tight">{isView ? 'View Expense Claim' : isEditing ? 'Edit Expense Claim' : 'New Expense Claim'}</h1>
                         </div>
                     </div>
                     
                     <div className="flex items-center gap-3">
                         <Button variant="secondary" onClick={() => navigate('/expense-claims')} className="h-10">Cancel</Button>
+                        {!isView && (
                         <Button variant="primary" onClick={handleSave} disabled={isLoading} className="h-10 shadow-md shadow-blue-500/20">
                             {isLoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" /> : <Save size={16} className="mr-2" />}
-                            Create
+                            {isEditing ? 'Update' : 'Create'}
                         </Button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -173,17 +177,29 @@ const NewExpenseClaimView = () => {
                         </div>
 
                         <div className="w-1/2 pr-4">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Paid by</label>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Paid by</label>
+                                {!isView && (
+                                    <button type="button" onClick={() => navigate('/expense-claim-payers')} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:underline">
+                                        Add payer
+                                    </button>
+                                )}
+                            </div>
                             <select 
                                 value={payerId}
+                                disabled={isView}
                                 onChange={(e) => setPayerId(e.target.value)}
                                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                             >
                                 <option value="">Select an expense claim payer...</option>
-                                {payers.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                {payers.filter((p: any) => !p.inactive).map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}{p.employee?.department ? ` · ${p.employee.department}` : ''}</option>
                                 ))}
                             </select>
+                            <p className="text-[11px] text-slate-400 mt-2 flex items-start gap-1">
+                                <HelpCircle size={12} className="mt-0.5 shrink-0" />
+                                Paid by is who submitted the claim (staff). Create them under Accounting → Expense Claim Payers.
+                            </p>
                         </div>
 
                         <div>

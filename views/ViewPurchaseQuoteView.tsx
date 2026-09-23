@@ -173,9 +173,9 @@ const ViewPurchaseQuoteView = () => {
     const dOptions = (quote.docOptions || (quote as any).options || {}) as any;
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6]/50 flex flex-col font-sans">
+        <div className="min-h-screen bg-slate-100/50 flex flex-col font-sans">
             {/* Compact Action Toolbar */}
-            <div className="bg-[#f8fafc] border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
+            <div className="bg-slate-50 border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
                 <div className="flex items-center space-x-3">
                     <button
                         onClick={() => navigate('/purchase-quotes')}
@@ -548,7 +548,7 @@ const ViewPurchaseQuoteView = () => {
                     {/* Items Table */}
                     <div className="mb-14">
                         <table className="w-full text-left">
-                            <thead className="bg-[#f8fafc] border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
+                            <thead className="bg-slate-50 border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
                                 <tr>
                                     {dOptions.columnLineNumber !== false && <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-12">#</th>}
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Item</th>
@@ -596,7 +596,7 @@ const ViewPurchaseQuoteView = () => {
                 </div>
             </div>
 
-            <div className="bg-[#f3f4f6] px-8 py-4 border-t border-gray-200 flex justify-end no-print">
+            <div className="bg-slate-100 px-8 py-4 border-t border-gray-200 flex justify-end no-print">
                 <div className="flex space-x-2">
                     <button onClick={() => window.print()} className="bg-white border border-gray-300 px-6 py-2 text-[11px] font-bold text-gray-700 rounded-md shadow-sm hover:bg-gray-50 transition uppercase tracking-widest flex items-center gap-2">
                         <Printer size={14} /> Print Document

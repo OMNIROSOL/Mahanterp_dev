@@ -15,6 +15,7 @@ import { cn } from '../../utils/cn';
 import apiService from '../../services/apiService';
 import { AppUser } from '../../types';
 import { useState, useEffect } from 'react';
+import { useTheme } from '../../hooks/useTheme';
 
 interface NavbarProps {
   onMenuClick?: () => void;
@@ -24,6 +25,7 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
   const [currentUser, setCurrentUserLocal] = useState<AppUser>(apiService.getCurrentUser());
   const [users, setUsers] = useState<AppUser[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const { isDark, toggle } = useTheme();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -54,17 +56,17 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-[#E5E7EB] flex items-center justify-between px-6 z-10 sticky top-0">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-10 sticky top-0">
       <div className="flex items-center gap-4 flex-1">
         <div className="max-w-md w-full relative group hidden md:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] group-focus-within:text-[#4F46E5] transition-colors" size={18} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={18} />
           <input 
             type="text" 
             placeholder="Search transactions, customers, or reports..." 
-            className="w-full bg-[#F9FAFB] border border-[#E5E7EB] focus:border-[#4F46E5]/50 rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-4 focus:ring-[#4F46E5]/5 transition-all outline-none"
+            className="w-full bg-slate-50 border border-slate-200 focus:border-primary/50 rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-4 focus:ring-primary/5 transition-all outline-none"
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-white px-1.5 font-mono text-[10px] font-medium text-slate-400 opacity-100">
+            <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border border-slate-200 bg-white px-1.5 font-mono text-[10px] font-medium text-slate-400 opacity-100">
               <span className="text-xs">⌘</span>K
             </kbd>
           </div>
@@ -77,8 +79,14 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
             <Bell size={20} />
             <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
           </button>
-          <button className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors hidden sm:flex">
-            <Moon size={20} />
+          <button
+            type="button"
+            onClick={toggle}
+            className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors flex"
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDark ? <Sun size={20} /> : <Moon size={20} />}
           </button>
           <button className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors hidden sm:flex">
             <HelpCircle size={20} />

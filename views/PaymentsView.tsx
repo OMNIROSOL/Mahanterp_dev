@@ -11,6 +11,7 @@ import { Payment } from '../types';
 import apiService from '../services/apiService';
 import { cn } from '../utils/cn';
 import BatchActionBar from '../components/shared/BatchActionBar';
+import RowActions from '../components/shared/RowActions';
 
 const PaymentsView = () => {
     const navigate = useNavigate();
@@ -306,10 +307,10 @@ const PaymentsView = () => {
                                         </td>
                                     )}
                                     <td className="px-4 py-4 text-center">
-                                        <div className="flex items-center justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-all">
-                                            <button onClick={() => navigate(`/payments/view/${item.id}`)} className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"><Eye size={16} /></button>
-                                            <button onClick={() => navigate(`/payments/edit/${item.id}`)} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"><Edit size={16} /></button>
-                                        </div>
+                                        <RowActions
+                                            viewPath={`/payments/view/${item.id}`}
+                                            editPath={`/payments/edit/${item.id}`}
+                                        />
                                     </td>
                                     {columns.filter(c => c.visible).map(col => {
                                         const val = (item as any)[col.id];

@@ -82,22 +82,22 @@ const EditBankAccountView = () => {
     }
 
     return (
-        <div className="bg-[#f9fafb] min-h-full pb-20 font-sans">
+        <div className="bg-slate-50 min-h-full pb-20 font-sans">
             {/* Breadcrumb */}
-            <div className="bg-[#f4f6f8] px-4 py-2 border-b border-gray-200 flex items-center text-[12px] text-[#78909c] space-x-2 select-none">
-                <i className="fas fa-university text-[#90a4ae] scale-75"></i>
+            <div className="bg-slate-100 px-4 py-2 border-b border-gray-200 flex items-center text-[12px] text-slate-400 space-x-2 select-none">
+                <i className="fas fa-university text-slate-400 scale-75"></i>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
                 <Link to="/account" className="hover:text-[#2196f3] text-[#2196f3]">Bank and Cash Accounts</Link>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
-                <span className="text-[#90a4ae]">Edit</span>
+                <span className="text-slate-400">Edit</span>
             </div>
 
             <div className="p-6">
-                <div className="bg-white border border-[#cfd8dc] shadow-sm rounded-sm max-w-[640px] mx-auto p-10">
+                <div className="bg-white border border-slate-300 shadow-sm rounded-sm max-w-[640px] mx-auto p-10">
 
                     {/* Title */}
                     <div className="flex items-center space-x-2 mb-8">
-                        <h2 className="text-[#90a4ae] text-[18px] font-normal">Bank or Cash Account</h2>
+                        <h2 className="text-slate-400 text-[18px] font-normal">Bank or Cash Account</h2>
                         <div className="w-4 h-4 rounded bg-[#cfd8dc] text-white flex items-center justify-center text-[10px] font-bold cursor-help">?</div>
                     </div>
 
@@ -105,34 +105,34 @@ const EditBankAccountView = () => {
                         {/* Name + Code */}
                         <div className="flex space-x-6">
                             <div className="flex-1 space-y-1.5">
-                                <label className="block text-[13px] text-[#455a64]">Name</label>
+                                <label className="block text-[13px] text-slate-600">Name</label>
                                 <input
                                     type="text"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    className="w-full border border-[#cfd8dc] px-3 py-1.5 text-[13px] text-[#263238] rounded focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
+                                    className="w-full border border-slate-300 px-3 py-1.5 text-[13px] text-slate-800 rounded focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
                                 />
                             </div>
                             <div className="w-36 space-y-1.5">
-                                <label className="block text-[13px] text-[#455a64]">Code</label>
+                                <label className="block text-[13px] text-slate-600">Code</label>
                                 <input
                                     type="text"
                                     value={code}
                                     onChange={(e) => setCode(e.target.value)}
                                     placeholder="Optional"
-                                    className="w-full border border-[#cfd8dc] px-3 py-1.5 text-[13px] text-[#263238] rounded focus:outline-none focus:border-[#2196f3] bg-white h-[34px] placeholder-gray-400"
+                                    className="w-full border border-slate-300 px-3 py-1.5 text-[13px] text-slate-800 rounded focus:outline-none focus:border-[#2196f3] bg-white h-[34px] placeholder-gray-400"
                                 />
                             </div>
                         </div>
 
                         {/* Currency */}
                         <div className="space-y-1.5">
-                            <label className="block text-[13px] text-[#455a64]">Currency</label>
+                            <label className="block text-[13px] text-slate-600">Currency</label>
                             <div className="relative w-52">
                                 <select
                                     value={currency}
                                     onChange={(e) => setCurrency(e.target.value)}
-                                    className="w-full border border-[#cfd8dc] pl-3 pr-8 py-1.5 text-[13px] text-[#263238] rounded appearance-none focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
+                                    className="w-full border border-slate-300 pl-3 pr-8 py-1.5 text-[13px] text-slate-800 rounded appearance-none focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
                                 >
                                     <option value="ZMW">ZMW - Zambian Kwacha</option>
                                     <option value="USD">USD - US Dollar</option>
@@ -140,25 +140,25 @@ const EditBankAccountView = () => {
                                     <option value="GBP">GBP - British Pound</option>
                                     <option value="ZAR">ZAR - South African Rand</option>
                                 </select>
-                                <i className="fas fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-[#455a64] text-[10px] pointer-events-none"></i>
+                                <i className="fas fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 text-[10px] pointer-events-none"></i>
                             </div>
                         </div>
 
                         {/* Division */}
                         <div className="space-y-1.5">
-                            <label className="block text-[13px] text-[#455a64]">Division</label>
+                            <label className="block text-[13px] text-slate-600">Division</label>
                             <div className="relative w-40">
                                 <select
                                     value={division}
                                     onChange={(e) => setDivision(e.target.value)}
-                                    className="w-full border border-[#cfd8dc] pl-3 pr-8 py-1.5 text-[13px] text-[#263238] rounded appearance-none focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
+                                    className="w-full border border-slate-300 pl-3 pr-8 py-1.5 text-[13px] text-slate-800 rounded appearance-none focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
                                 >
                                     <option value="">Optional</option>
                                     <option value="HQ">HQ</option>
                                     <option value="Branch">Branch</option>
                                     <option value="Finance">Finance</option>
                                 </select>
-                                <i className="fas fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-[#455a64] text-[10px] pointer-events-none"></i>
+                                <i className="fas fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 text-[10px] pointer-events-none"></i>
                             </div>
                         </div>
 
@@ -169,7 +169,7 @@ const EditBankAccountView = () => {
                                 <label className="flex items-center space-x-2 cursor-pointer group">
                                     <div
                                         onClick={() => setHasIBAN(!hasIBAN)}
-                                        className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${hasIBAN ? 'bg-[#2196f3] border-[#2196f3]' : 'border-[#cfd8dc] bg-white'}`}
+                                        className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${hasIBAN ? 'bg-[#2196f3] border-[#2196f3]' : 'border-slate-300 bg-white'}`}
                                     >
                                         {hasIBAN && <i className="fas fa-check text-white text-[8px]"></i>}
                                     </div>
@@ -183,7 +183,7 @@ const EditBankAccountView = () => {
                                             type="text"
                                             value={ibanValue}
                                             onChange={(e) => setIbanValue(e.target.value)}
-                                            className="w-64 border border-[#cfd8dc] px-3 py-1.5 text-[13px] text-[#263238] rounded focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
+                                            className="w-64 border border-slate-300 px-3 py-1.5 text-[13px] text-slate-800 rounded focus:outline-none focus:border-[#2196f3] bg-white h-[34px]"
                                         />
                                     </div>
                                 )}
@@ -193,7 +193,7 @@ const EditBankAccountView = () => {
                             <label className="flex items-center space-x-2 cursor-pointer group">
                                 <div
                                     onClick={() => setCanHavePending(!canHavePending)}
-                                    className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${canHavePending ? 'bg-[#2196f3] border-[#2196f3]' : 'border-[#cfd8dc] bg-white'}`}
+                                    className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${canHavePending ? 'bg-[#2196f3] border-[#2196f3]' : 'border-slate-300 bg-white'}`}
                                 >
                                     {canHavePending && <i className="fas fa-check text-white text-[8px]"></i>}
                                 </div>
@@ -207,7 +207,7 @@ const EditBankAccountView = () => {
                                 <label className="flex items-center space-x-2 cursor-pointer group">
                                     <div
                                         onClick={() => setHasCreditLimit(!hasCreditLimit)}
-                                        className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${hasCreditLimit ? 'bg-[#2196f3] border-[#2196f3]' : 'border-[#cfd8dc] bg-white'}`}
+                                        className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${hasCreditLimit ? 'bg-[#2196f3] border-[#2196f3]' : 'border-slate-300 bg-white'}`}
                                     >
                                         {hasCreditLimit && <i className="fas fa-check text-white text-[8px]"></i>}
                                     </div>
@@ -223,9 +223,9 @@ const EditBankAccountView = () => {
                                                 value={creditLimit}
                                                 onChange={(e) => setCreditLimit(e.target.value)}
                                                 min={0}
-                                                className="w-28 border border-[#cfd8dc] px-3 py-1.5 text-[13px] text-[#263238] rounded-l focus:outline-none focus:border-[#2196f3] bg-white h-full text-right"
+                                                className="w-28 border border-slate-300 px-3 py-1.5 text-[13px] text-slate-800 rounded-l focus:outline-none focus:border-[#2196f3] bg-white h-full text-right"
                                             />
-                                            <div className="bg-[#f5f5f5] border border-[#cfd8dc] border-l-0 px-3 py-1.5 text-[13px] text-[#455a64] rounded-r h-full flex items-center">
+                                            <div className="bg-slate-100 border border-slate-300 border-l-0 px-3 py-1.5 text-[13px] text-slate-600 rounded-r h-full flex items-center">
                                                 {currency}
                                             </div>
                                         </div>
@@ -237,7 +237,7 @@ const EditBankAccountView = () => {
                             <label className="flex items-center space-x-2 cursor-pointer group">
                                 <div
                                     onClick={() => setIsInactive(!isInactive)}
-                                    className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${isInactive ? 'bg-[#2196f3] border-[#2196f3]' : 'border-[#cfd8dc] bg-white'}`}
+                                    className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center transition-colors ${isInactive ? 'bg-[#2196f3] border-[#2196f3]' : 'border-slate-300 bg-white'}`}
                                 >
                                     {isInactive && <i className="fas fa-check text-white text-[8px]"></i>}
                                 </div>
@@ -251,7 +251,7 @@ const EditBankAccountView = () => {
             </div>
 
             {/* Sticky Footer */}
-            <div className="fixed bottom-0 left-0 right-0 bg-[#f4f6f8] border-t border-[#cfd8dc] px-8 py-3 flex items-center h-14 z-10 pl-64">
+            <div className="fixed bottom-0 left-0 right-0 bg-slate-100 border-t border-slate-300 px-8 py-3 flex items-center h-14 z-10 pl-64">
                 <div className="flex items-center space-x-4">
                     <button
                         onClick={handleUpdate}

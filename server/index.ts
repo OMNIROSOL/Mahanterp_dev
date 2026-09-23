@@ -28,7 +28,11 @@ import {
   ensureAllocationTables,
   customersMoneyPositions,
   suppliersMoneyPositions,
+  unrealizedFxReport,
 } from './ledger';
+import { currencyCode, ensureMultiCurrencyColumns, resolveRateAtDate } from './currency';
+import { employeePayload, ensureHrTables } from './hr';
+import { ensurePhase5Tables, registerPhase5Routes } from './phase5';
 
 const app = express();
 console.log('Connecting to DB:', process.env.DATABASE_URL ? 'URL found' : 'URL MISSING');
@@ -254,13 +258,20 @@ app.use(authenticateToken);
 
 // --- CURRENCIES ---
 app.get('/api/currencies', async (req, res) => {
+  const fallback = [
+    { code: 'ZMW', name: 'Zambian Kwacha', symbol: 'K', decimalPlaces: 2 },
+    { code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2 },
+    { code: 'EUR', name: 'Euro', symbol: '€', decimalPlaces: 2 },
+    { code: 'GBP', name: 'British Pound', symbol: '£', decimalPlaces: 2 },
+    { code: 'ZAR', name: 'South African Rand', symbol: 'R', decimalPlaces: 2 },
+  ];
   try {
     const currencies = await prisma.currency.findMany({
       orderBy: { code: 'asc' }
     });
-    res.json(currencies);
+    res.json(currencies.length ? currencies : fallback);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.json(fallback);
   }
 });
 
@@ -326,6 +337,17 @@ app.get('/api/exchange-rates', async (req, res) => {
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }]
     });
     res.json(rates);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/exchange-rates/at-date', async (req, res) => {
+  try {
+    const date = String(req.query.date || '');
+    const currency = currencyCode(String(req.query.currency || 'ZMW'));
+    const rate = await resolveRateAtDate(prisma, date || new Date(), currency);
+    res.json({ currency, date: date || new Date().toISOString().slice(0, 10), rate });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -765,7 +787,14 @@ const generateNextReference = async (type: string, tx: any = prisma) => {
 
   switch (type) {
     case 'invoice': count = await getNextNum(tx.invoice, 'INV-'); prefix = 'INV'; break;
-    case 'quote': count = await getNextNum(tx.salesQuote, 'SQ-'); prefix = 'SQ'; break;
+    case 'quote':
+    case 'sales-quote':
+    case 'sales-quotes': count = await getNextNum(tx.salesQuote, 'SQ-'); prefix = 'SQ'; break;
+    case 'employee':
+      await ensureHrTables(tx);
+      count = await getNextCodeNum(tx.employee, 'EMP-');
+      prefix = 'EMP';
+      break;
     case 'order': count = await getNextNum(tx.salesOrder, 'SO-'); prefix = 'SO'; break;
     case 'delivery': count = await getNextNum(tx.deliveryNote, 'DN-'); prefix = 'DN'; break;
     case 'receipt': count = await getNextNum(tx.receipt, 'RCP-'); prefix = 'RCP'; break;
@@ -813,13 +842,16 @@ app.get('/api/customers', async (req, res) => {
     });
     const positions = await customersMoneyPositions(prisma, customers);
     const customersWithBalance = customers.map(customer => {
-      const pos = positions[customer.id] || { debit: 0, advance: 0, balance: 0 };
+      const pos = positions[customer.id] || { debit: 0, debitBase: 0, advance: 0, advanceBase: 0, balance: 0, balanceBase: 0 };
       return {
         ...customer,
         debit: pos.debit,
+        debitBase: pos.debitBase,
         advance: pos.advance,
+        advanceBase: pos.advanceBase,
         accountsReceivable: pos.debit,
         balance: pos.balance,
+        balanceBase: pos.balanceBase,
         status: customer.inactive ? 'Inactive' : (pos.balance <= 0 ? 'Paid' : 'Unpaid')
       };
     });
@@ -840,14 +872,17 @@ app.get('/api/customers/:id', async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
     const pos = await customersMoneyPositions(prisma, [customer]);
-    const money = pos[customer.id] || { debit: 0, advance: 0, balance: 0 };
+    const money = pos[customer.id] || { debit: 0, debitBase: 0, advance: 0, advanceBase: 0, balance: 0, balanceBase: 0 };
 
     res.json({
       ...customer,
       debit: money.debit,
+      debitBase: money.debitBase,
       advance: money.advance,
+      advanceBase: money.advanceBase,
       accountsReceivable: money.debit,
       balance: money.balance,
+      balanceBase: money.balanceBase,
       status: customer.inactive ? 'Inactive' : (money.balance <= 0 ? 'Paid' : 'Unpaid')
     });
   } catch (err) {
@@ -1494,8 +1529,10 @@ app.get('/api/invoices/:id/transactions', async (req, res) => {
 });
 
 app.post('/api/invoices', async (req, res) => {
-  const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency } = req.body;
+  const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency, exchangeRate } = req.body;
   try {
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.create({
         data: {
@@ -1503,10 +1540,11 @@ app.post('/api/invoices', async (req, res) => {
           reference,
           grandTotal,
           balanceDue,
-          currency,
+          currency: code,
+          exchangeRate: rate,
           issueDate: parseDate(issueDate),
           dueDate: parseDate(dueDate),
-          docOptions: { ...(docOptions || {}), description },
+          docOptions: { ...(docOptions || {}), description, currency: code, exchangeRate: rate },
           items: {
             create: items.map((item: any) => ({
               itemId: item.itemId,
@@ -1533,8 +1571,10 @@ app.post('/api/invoices', async (req, res) => {
 
 app.put('/api/invoices/:id', async (req, res) => {
   const { id } = req.params;
-  const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency } = req.body;
+  const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency, exchangeRate } = req.body;
   try {
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.$transaction(async (tx) => {
       await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
       const invoice = await tx.invoice.update({
@@ -1544,10 +1584,11 @@ app.put('/api/invoices/:id', async (req, res) => {
           reference,
           grandTotal,
           balanceDue,
-          currency,
+          currency: code,
+          exchangeRate: rate,
           issueDate: parseDate(issueDate),
           dueDate: parseDate(dueDate),
-          docOptions: { ...(docOptions || {}), description },
+          docOptions: { ...(docOptions || {}), description, currency: code, exchangeRate: rate },
           items: {
             create: items.map((item: any) => ({
               itemId: item.itemId,
@@ -1615,20 +1656,23 @@ app.get('/api/quotes/:id', async (req, res) => {
 });
 
 app.post('/api/quotes', async (req, res) => {
-  const { customerId, reference, items, amount, currency, description, billingAddress, expiryDays, docOptions, issueDate, status } = req.body;
+  const { customerId, reference, items, amount, currency, exchangeRate, description, billingAddress, expiryDays, docOptions, issueDate, status } = req.body;
   try {
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.salesQuote.create({
       data: {
         customerId,
         reference,
         amount,
-        currency,
+        currency: code,
+        exchangeRate: rate,
         description,
         billingAddress,
         issueDate: issueDate ? new Date(issueDate) : undefined,
         status: status || 'Active',
         expiryDays: parseInt(expiryDays) || 30,
-        docOptions: docOptions || {},
+        docOptions: { ...(docOptions || {}), currency: code, exchangeRate: rate },
         items: {
           create: items.map((item: any) => ({
             itemId: item.itemId,
@@ -1644,9 +1688,12 @@ app.post('/api/quotes', async (req, res) => {
       }
     });
     res.json(result);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error creating quote:', err);
-    res.status(500).json({ error: (err as Error).message });
+    const unique = err?.code === 'P2002' || /unique constraint/i.test(String(err?.message || ''));
+    res.status(unique ? 409 : 500).json({
+      error: unique ? 'Unique constraint failed on the fields: (reference)' : (err as Error).message
+    });
   }
 });
 
@@ -1667,8 +1714,10 @@ app.patch('/api/quotes/:id', async (req, res) => {
 
 app.put('/api/quotes/:id', async (req, res) => {
   const { id } = req.params;
-  const { customerId, reference, items, amount, currency, description, billingAddress, expiryDays, docOptions, status } = req.body;
+  const { customerId, reference, items, amount, currency, exchangeRate, description, billingAddress, expiryDays, docOptions, status } = req.body;
   try {
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, undefined, code));
     await prisma.quoteItem.deleteMany({ where: { quoteId: id } });
     const result = await prisma.salesQuote.update({
       where: { id },
@@ -1676,11 +1725,12 @@ app.put('/api/quotes/:id', async (req, res) => {
         customerId,
         reference,
         amount,
-        currency,
+        currency: code,
+        exchangeRate: rate,
         description,
         billingAddress,
         expiryDays: parseInt(expiryDays) || 30,
-        docOptions: docOptions || {},
+        docOptions: { ...(docOptions || {}), currency: code, exchangeRate: rate },
         status: status || 'Active',
         items: {
           create: items.map((item: any) => ({
@@ -1819,7 +1869,8 @@ app.post('/api/orders', async (req, res) => {
       customerId,
       reference,
       amount: Number(amount || 0),
-      currency: currency || 'ZMW',
+      currency: currencyCode(currency) || 'ZMW',
+      exchangeRate: currencyCode(currency) === 'ZMW' ? 1 : (Number(req.body.exchangeRate) || 1),
       expiryDate: expiryDate ? new Date(expiryDate) : undefined,
       description,
       billingAddress,
@@ -2128,7 +2179,7 @@ app.get('/api/suppliers', async (req, res) => {
     });
     const positions = await suppliersMoneyPositions(prisma, suppliers);
     const suppliersWithCounts = suppliers.map(supplier => {
-      const pos = positions[supplier.id] || { debit: 0, advance: 0, balance: 0 };
+      const pos = positions[supplier.id] || { debit: 0, debitBase: 0, advance: 0, advanceBase: 0, balance: 0, balanceBase: 0 };
       const activeEnquiries = (supplier.purchaseEnquiries || []).filter((q: any) => {
         const status = (q.status || '').toLowerCase();
         return status !== 'accepted' && status !== 'rejected';
@@ -2148,9 +2199,12 @@ app.get('/api/suppliers', async (req, res) => {
       return {
         ...supplier,
         debit: pos.debit,
+        debitBase: pos.debitBase,
         advance: pos.advance,
+        advanceBase: pos.advanceBase,
         accountsPayable: pos.debit,
         balance: pos.balance,
+        balanceBase: pos.balanceBase,
         purchaseEnquiries: activeEnquiries,
         purchaseOrders: activeOrders,
         purchaseInvoices: (supplier.invoices || []).length,
@@ -2176,13 +2230,16 @@ app.get('/api/suppliers/:id', async (req, res) => {
       return res.status(404).json({ error: 'Supplier not found' });
     }
     const pos = await suppliersMoneyPositions(prisma, [supplier]);
-    const money = pos[supplier.id] || { debit: 0, advance: 0, balance: 0 };
+    const money = pos[supplier.id] || { debit: 0, debitBase: 0, advance: 0, advanceBase: 0, balance: 0, balanceBase: 0 };
     res.json({
       ...supplier,
       debit: money.debit,
+      debitBase: money.debitBase,
       advance: money.advance,
+      advanceBase: money.advanceBase,
       accountsPayable: money.debit,
       balance: money.balance,
+      balanceBase: money.balanceBase,
       status: supplier.inactive ? 'Inactive' : (money.balance < 0 ? 'Overpaid' : (money.balance === 0 ? 'Paid' : 'Unpaid'))
     });
   } catch (err: any) {
@@ -2214,7 +2271,8 @@ app.get('/api/suppliers/:id/invoices', async (req, res) => {
         grandTotal: grand,
         balanceDue: due,
         status: inv.status,
-        currency: (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+        currency: inv.currency || (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+        exchangeRate: Number((inv as any).exchangeRate || (inv.docOptions as any)?.exchangeRate || 1),
         supplierId: inv.supplier_id,
         supplierName: inv.suppliers?.name || ''
       };
@@ -2299,8 +2357,10 @@ app.get('/api/receipts', async (req, res) => {
 });
 
 app.post('/api/receipts', async (req, res) => {
-  const { reference, date, paidByContact, receivedInAccount, description, amount, currency, status, items, allocations } = req.body;
+  const { reference, date, paidByContact, receivedInAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
   try {
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const result = await prisma.$transaction(async (tx) => {
       const receipt = await tx.receipt.create({
         data: {
@@ -2310,7 +2370,8 @@ app.post('/api/receipts', async (req, res) => {
           receivedInAccount,
           description,
           amount,
-          currency,
+          currency: code,
+          exchangeRate: rate,
           status: status || 'Completed',
           items: items || null
         }
@@ -2341,7 +2402,9 @@ app.get('/api/receipts/:id', async (req, res) => {
 
 app.put('/api/receipts/:id', async (req, res) => {
   try {
-    const { reference, date, paidByContact, receivedInAccount, description, amount, currency, status, items, allocations } = req.body;
+    const { reference, date, paidByContact, receivedInAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const updatedReceipt = await prisma.$transaction(async (tx) => {
       const receipt = await tx.receipt.update({
         where: { id: req.params.id },
@@ -2352,7 +2415,8 @@ app.put('/api/receipts/:id', async (req, res) => {
           receivedInAccount,
           description,
           amount,
-          currency,
+          currency: code,
+          exchangeRate: rate,
           status: status || 'Completed',
           items: items || null
         }
@@ -2438,8 +2502,11 @@ app.get('/api/accounts', async (req, res) => {
     const accountsWithTypesAndBalances = accounts.map(a => {
       const sumDebit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
       const sumCredit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
+      const foreignDebit = a.ledgerEntries.reduce((sum, entry) => sum + Number((entry as any).foreignDebit || 0), 0);
+      const foreignCredit = a.ledgerEntries.reduce((sum, entry) => sum + Number((entry as any).foreignCredit || 0), 0);
       const balance = signedBalance(a.accountType, sumDebit, sumCredit);
-      return { ...a, type: a.accountType, balance };
+      const foreignBalance = signedBalance(a.accountType, foreignDebit, foreignCredit);
+      return { ...a, type: a.accountType, currency: (a as any).currency || 'ZMW', balance, balanceBase: balance, foreignBalance };
     });
     res.json(accountsWithTypesAndBalances);
   } catch (err: any) {
@@ -2461,8 +2528,18 @@ app.get('/api/accounts/:id', async (req, res) => {
     });
     const sumDebit = entries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
     const sumCredit = entries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
+    const foreignDebit = entries.reduce((sum, entry) => sum + Number((entry as any).foreignDebit || 0), 0);
+    const foreignCredit = entries.reduce((sum, entry) => sum + Number((entry as any).foreignCredit || 0), 0);
     const balance = signedBalance(account.accountType, sumDebit, sumCredit);
-    res.json({ ...account, type: account.accountType, balance });
+    const foreignBalance = signedBalance(account.accountType, foreignDebit, foreignCredit);
+    res.json({
+      ...account,
+      type: account.accountType,
+      currency: (account as any).currency || 'ZMW',
+      balance,
+      balanceBase: balance,
+      foreignBalance,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2470,7 +2547,7 @@ app.get('/api/accounts/:id', async (req, res) => {
 
 app.put('/api/accounts/:id', async (req, res) => {
   try {
-    const { name, code, type, isPaymentAccount, inactive } = req.body;
+    const { name, code, type, isPaymentAccount, inactive, currency } = req.body;
     const data: any = {
       name: name != null ? String(name).trim() : undefined,
       accountType: type,
@@ -2480,6 +2557,7 @@ app.put('/api/accounts/:id', async (req, res) => {
     if (typeof code === 'string' && code.trim()) {
       data.code = code.trim();
     }
+    if (currency) data.currency = currencyCode(currency);
     const result = await prisma.chartOfAccount.update({
       where: { id: req.params.id },
       data
@@ -2533,12 +2611,27 @@ app.get('/api/accounts/:id/ledger', async (req, res) => {
         sourceDocumentId: entry.source_document_id,
         debit,
         credit,
+        currency: (entry as any).currency || 'ZMW',
+        exchangeRate: Number((entry as any).exchangeRate || 1),
+        foreignDebit: Number((entry as any).foreignDebit || 0),
+        foreignCredit: Number((entry as any).foreignCredit || 0),
         balance: Math.round(running * 100) / 100
       };
     });
 
     res.json({
-      account: { ...account, type: account.accountType, balance: mapped.length ? mapped[mapped.length - 1].balance : 0 },
+      account: {
+        ...account,
+        type: account.accountType,
+        currency: (account as any).currency || 'ZMW',
+        balance: mapped.length ? mapped[mapped.length - 1].balance : 0,
+        balanceBase: mapped.length ? mapped[mapped.length - 1].balance : 0,
+        foreignBalance: signedBalance(
+          account.accountType,
+          entries.reduce((sum, e) => sum + Number((e as any).foreignDebit || 0), 0),
+          entries.reduce((sum, e) => sum + Number((e as any).foreignCredit || 0), 0)
+        ),
+      },
       entries: mapped
     });
   } catch (err: any) {
@@ -2668,8 +2761,11 @@ app.get('/api/bank-accounts', async (req, res) => {
     const accountsWithTypesAndBalances = accounts.map(a => {
       const sumDebit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.debit || 0), 0);
       const sumCredit = a.ledgerEntries.reduce((sum, entry) => sum + Number(entry.credit || 0), 0);
+      const foreignDebit = a.ledgerEntries.reduce((sum, entry) => sum + Number((entry as any).foreignDebit || 0), 0);
+      const foreignCredit = a.ledgerEntries.reduce((sum, entry) => sum + Number((entry as any).foreignCredit || 0), 0);
       const balance = signedBalance(a.accountType, sumDebit, sumCredit);
-      return { ...a, type: a.accountType, balance };
+      const foreignBalance = signedBalance(a.accountType, foreignDebit, foreignCredit);
+      return { ...a, type: a.accountType, currency: (a as any).currency || 'ZMW', balance, balanceBase: balance, foreignBalance };
     });
     res.json(accountsWithTypesAndBalances);
   } catch (err: any) {
@@ -2679,7 +2775,7 @@ app.get('/api/bank-accounts', async (req, res) => {
 
 app.post('/api/accounts', async (req, res) => {
   try {
-    const { name, code, type, isPaymentAccount } = req.body;
+    const { name, code, type, isPaymentAccount, currency } = req.body;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Account name is required' });
     }
@@ -2691,7 +2787,8 @@ app.post('/api/accounts', async (req, res) => {
         name: String(name).trim(),
         code: uniqueCode,
         accountType: type || 'Asset',
-        isPaymentAccount: isPaymentAccount || false
+        isPaymentAccount: isPaymentAccount || false,
+        currency: currencyCode(currency),
       }
     });
     res.json({ ...result, type: result.accountType, balance: 0 });
@@ -2706,7 +2803,7 @@ app.post('/api/accounts', async (req, res) => {
 
 app.post('/api/bank-accounts', async (req, res) => {
   try {
-    const { name, code, type, isPaymentAccount } = req.body;
+    const { name, code, type, isPaymentAccount, currency } = req.body;
     const uniqueCode = (typeof code === 'string' && code.trim()) ? code.trim() : `BNK-${Date.now()}`;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Account name is required' });
@@ -2716,7 +2813,8 @@ app.post('/api/bank-accounts', async (req, res) => {
         name: String(name).trim(),
         code: uniqueCode,
         accountType: type || 'Asset',
-        isPaymentAccount: isPaymentAccount ?? true
+        isPaymentAccount: isPaymentAccount ?? true,
+        currency: currencyCode(currency),
       }
     });
     res.json(result);
@@ -2731,7 +2829,7 @@ app.post('/api/bank-accounts', async (req, res) => {
 
 app.put('/api/bank-accounts/:id', async (req, res) => {
   try {
-    const { name, code, type, isPaymentAccount, inactive } = req.body;
+    const { name, code, type, isPaymentAccount, inactive, currency } = req.body;
     const dataToUpdate: any = {
       name,
       accountType: type,
@@ -2741,6 +2839,7 @@ app.put('/api/bank-accounts/:id', async (req, res) => {
     if (code) {
       dataToUpdate.code = code;
     }
+    if (currency) dataToUpdate.currency = currencyCode(currency);
     const result = await prisma.chartOfAccount.update({
       where: { id: req.params.id },
       data: dataToUpdate
@@ -4079,7 +4178,8 @@ app.get('/api/purchase-invoices', async (req, res) => {
         balanceDue: Math.max(0, Math.round((grand - paid) * 100) / 100),
         supplier: inv.suppliers?.name || 'Unknown',
         supplierId: inv.supplier_id,
-        currency: (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+        currency: inv.currency || (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+        exchangeRate: Number((inv as any).exchangeRate || (inv.docOptions as any)?.exchangeRate || 1),
         discount: totalDiscount
       };
     });
@@ -4132,7 +4232,8 @@ app.get('/api/purchase-invoices/:id', async (req, res) => {
       issueDate: inv.created_at ? inv.created_at.toISOString().split('T')[0] : null,
       grandTotal: inv.grand_total || itemsTotal,
       invoiceAmount: inv.grand_total || itemsTotal,
-      currency: (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+      currency: inv.currency || (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
+      exchangeRate: Number((inv as any).exchangeRate || (inv.docOptions as any)?.exchangeRate || 1),
       supplier: inv.suppliers?.name || 'Unknown',
       supplierId: inv.supplier_id
     };
@@ -4144,9 +4245,11 @@ app.get('/api/purchase-invoices/:id', async (req, res) => {
 });
 
 app.post('/api/purchase-invoices', async (req, res) => {
-  const { supplierId, reference, grandTotal, dueDate, issueDate, status, description, items, docOptions } = req.body;
+  const { supplierId, reference, grandTotal, dueDate, issueDate, status, description, items, docOptions, currency, exchangeRate } = req.body;
   console.log(`[PI POST] Body items:`, items?.length);
   try {
+    const code = currencyCode(currency || (docOptions as any)?.currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || Number((docOptions as any)?.exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.invoices.create({
       data: {
         supplier_id: supplierId,
@@ -4156,7 +4259,9 @@ app.post('/api/purchase-invoices', async (req, res) => {
         due_date: dueDate ? parseDate(dueDate) : undefined,
         created_at: issueDate ? parseDate(issueDate) : undefined,
         description: description || '',
-        docOptions: docOptions || {},
+        currency: code,
+        exchangeRate: rate,
+        docOptions: { ...(docOptions || {}), currency: code, exchangeRate: rate },
         items: {
           create: (items || []).map((i: any) => ({
             itemId: i.itemId,
@@ -4222,9 +4327,11 @@ app.post('/api/purchase-invoices', async (req, res) => {
 
 app.put('/api/purchase-invoices/:id', async (req, res) => {
   const { id } = req.params;
-  const { supplierId, reference, grandTotal, dueDate, issueDate, status, description, items, docOptions } = req.body;
+  const { supplierId, reference, grandTotal, dueDate, issueDate, status, description, items, docOptions, currency, exchangeRate } = req.body;
   console.log(`>>> [PURCHASE INVOICE PUT] UPDATING ID: ${id}`, JSON.stringify(req.body, null, 2));
   try {
+    const code = currencyCode(currency || (docOptions as any)?.currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || Number((docOptions as any)?.exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.invoices.update({
       where: { id },
       data: {
@@ -4235,7 +4342,9 @@ app.put('/api/purchase-invoices/:id', async (req, res) => {
         due_date: dueDate ? parseDate(dueDate) : undefined,
         created_at: issueDate ? parseDate(issueDate) : undefined,
         description: description || '',
-        docOptions: docOptions || {},
+        currency: code,
+        exchangeRate: rate,
+        docOptions: { ...(docOptions || {}), currency: code, exchangeRate: rate },
         items: {
           deleteMany: {},
           create: (items || []).map((i: any) => ({
@@ -4832,7 +4941,9 @@ app.get('/api/payments/:id', async (req, res) => {
 
 app.post('/api/payments', async (req, res) => {
   try {
-    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, status, items, allocations } = req.body;
+    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const newPayment = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
@@ -4842,7 +4953,8 @@ app.post('/api/payments', async (req, res) => {
           paidFromAccount,
           description,
           amount,
-          currency,
+          currency: code,
+          exchangeRate: rate,
           status: status || 'Completed',
           items: items || null
         }
@@ -4858,7 +4970,9 @@ app.post('/api/payments', async (req, res) => {
 
 app.put('/api/payments/:id', async (req, res) => {
   try {
-    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, status, items, allocations } = req.body;
+    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+    const code = currencyCode(currency);
+    const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const updatedPayment = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.update({
         where: { id: req.params.id },
@@ -4869,7 +4983,8 @@ app.put('/api/payments/:id', async (req, res) => {
           paidFromAccount,
           description,
           amount,
-          currency,
+          currency: code,
+          exchangeRate: rate,
           status: status || 'Completed',
           items: items || null
         }
@@ -4948,6 +5063,31 @@ app.post('/api/inter-account-transfers', async (req, res) => {
   }
 });
 
+app.put('/api/inter-account-transfers/:id', async (req, res) => {
+  try {
+    const { reference, date, paidFromAccount, receivedInAccount, description, amount, currency } = req.body;
+    const result = await prisma.$transaction(async (tx) => {
+      const transfer = await tx.interAccountTransfer.update({
+        where: { id: req.params.id },
+        data: {
+          reference,
+          date: date ? new Date(date) : undefined,
+          paidFromAccount,
+          receivedInAccount,
+          description,
+          amount,
+          currency: currency || 'ZMW',
+        }
+      });
+      await postTransfer(tx, transfer);
+      return transfer;
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/inter-account-transfers/:id', async (req, res) => {
   try {
     const transfer = await prisma.interAccountTransfer.findUnique({ where: { id: req.params.id }});
@@ -4966,10 +5106,85 @@ app.delete('/api/inter-account-transfers/:id', async (req, res) => {
   }
 });
 
+// Employees (Q-02 master; payroll is out of scope)
+app.get('/api/employees', async (_req, res) => {
+  try {
+    await ensureHrTables(prisma);
+    const employees = await prisma.employee.findMany({
+      include: { payers: { select: { id: true, code: true, name: true, inactive: true } } },
+      orderBy: { name: 'asc' }
+    });
+    res.json(employees);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/employees/:id', async (req, res) => {
+  try {
+    await ensureHrTables(prisma);
+    const employee = await prisma.employee.findUnique({
+      where: { id: req.params.id },
+      include: { payers: true }
+    });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    res.json(employee);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/employees', async (req, res) => {
+  try {
+    await ensureHrTables(prisma);
+    const data = employeePayload(req.body);
+    if (!data.name) return res.status(400).json({ error: 'Employee name is required' });
+    if (!data.code) data.code = await generateNextReference('employee');
+    const result = await prisma.employee.create({ data });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/employees/:id', async (req, res) => {
+  try {
+    await ensureHrTables(prisma);
+    const data = employeePayload(req.body);
+    if (!data.name) return res.status(400).json({ error: 'Employee name is required' });
+    const result = await prisma.employee.update({ where: { id: req.params.id }, data });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/employees/:id/make-payer', async (req, res) => {
+  try {
+    await ensureHrTables(prisma);
+    const employee = await prisma.employee.findUnique({ where: { id: req.params.id } });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const existing = await prisma.expenseClaimPayer.findFirst({ where: { employeeId: employee.id } });
+    if (existing) return res.json(existing);
+    const result = await prisma.expenseClaimPayer.create({
+      data: {
+        name: employee.name,
+        code: req.body.code || `PAYER-${employee.code || Date.now()}`,
+        employeeId: employee.id,
+      }
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Expense Claim Payers
 app.get('/api/expense-claim-payers', async (req, res) => {
   try {
+    await ensureHrTables(prisma);
     const payers = await prisma.expenseClaimPayer.findMany({
+      include: { employee: { select: { id: true, code: true, name: true, department: true } } },
       orderBy: { name: 'asc' }
     });
     res.json(payers);
@@ -4980,9 +5195,41 @@ app.get('/api/expense-claim-payers', async (req, res) => {
 
 app.post('/api/expense-claim-payers', async (req, res) => {
   try {
-    const { name, code } = req.body;
+    await ensureHrTables(prisma);
+    const { name, code, employeeId } = req.body;
+    let payerName = String(name || '').trim();
+    if (employeeId && !payerName) {
+      const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+      payerName = employee?.name || '';
+    }
+    if (!payerName) return res.status(400).json({ error: 'Payer name is required' });
     const result = await prisma.expenseClaimPayer.create({
-      data: { name, code: code || 'PAYER-' + Date.now() }
+      data: {
+        name: payerName,
+        code: code || 'PAYER-' + Date.now(),
+        employeeId: employeeId || null,
+      },
+      include: { employee: true }
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/expense-claim-payers/:id', async (req, res) => {
+  try {
+    await ensureHrTables(prisma);
+    const { name, code, employeeId, inactive } = req.body;
+    const result = await prisma.expenseClaimPayer.update({
+      where: { id: req.params.id },
+      data: {
+        name: name != null ? String(name).trim() : undefined,
+        code: code != null ? String(code).trim() : undefined,
+        employeeId: employeeId === '' ? null : (employeeId || undefined),
+        inactive: typeof inactive === 'boolean' ? inactive : undefined,
+      },
+      include: { employee: true }
     });
     res.json(result);
   } catch (err: any) {
@@ -5336,6 +5583,17 @@ app.delete('/api/admin/backups/:id', async (req: any, res: any) => {
   }
 });
 
+app.get('/api/reports/unrealized-fx', async (_req, res) => {
+  try {
+    const rows = await unrealizedFxReport(prisma);
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+registerPhase5Routes(app, prisma);
+
 app.use((req: any, res: any) => {
   console.log(`[404] ${req.method} ${req.url}`);
   res.status(404).json({
@@ -5348,6 +5606,9 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`🚀 ERP Backend running at http://localhost:${PORT}`);
     ensureAllocationTables(prisma)
+      .then(() => ensureMultiCurrencyColumns(prisma))
+      .then(() => ensureHrTables(prisma))
+      .then(() => ensurePhase5Tables(prisma))
       .then(() => backfillUnpostedDocuments(prisma))
       .then((result) => console.log('[ledger] backfill complete', JSON.stringify(result)))
       .catch((err) => console.error('[ledger] backfill failed', err));

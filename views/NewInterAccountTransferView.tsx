@@ -57,12 +57,11 @@ const NewInterAccountTransferView = () => {
         setIsLoading(true);
         try {
             if (isEdit && id) {
-                // Not supported in this simplified version, would require reversing ledger entries etc.
-                alert('Editing an inter-account transfer is not supported due to ledger implications. Please delete and recreate.');
+                await apiService.updateInterAccountTransfer(id, formData);
             } else {
                 await apiService.createInterAccountTransfer(formData);
-                navigate('/inter-account-transfers');
             }
+            navigate('/inter-account-transfers');
         } catch (error) {
             console.error('Failed to save transfer:', error);
             alert('Failed to save transfer');

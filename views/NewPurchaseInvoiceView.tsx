@@ -3,6 +3,10 @@ import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import apiService from '../services/apiService';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { PurchaseInvoice, FooterTemplate } from '../types';
+import { CurrencyRateFields, BaseEquivalent } from '../components/shared/CurrencyRateFields';
+import { currencyCode } from '../utils/currency';
+import { DEFAULT_TAX_CODE, taxRateForCode } from '../utils/tax';
+import { getDocumentDefaults } from '../utils/documentDefaults';
 import Card from '../components/shared/Card';
 import Button from '../components/shared/Button';
 import FormInput from '../components/shared/FormInput';
@@ -25,7 +29,8 @@ import {
     ChevronUp,
     Hash,
     Info,
-    Search as SearchIcon
+    Search as SearchIcon,
+    Briefcase
 } from 'lucide-react';
 import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
@@ -88,11 +93,14 @@ const NewPurchaseInvoiceView = () => {
     const [dueDate, setDueDate] = useState('');
     const [supplier, setSupplier] = useState('');
     const [currency, setCurrency] = useState('ZMW');
+    const [exchangeRate, setExchangeRate] = useState(1);
+    const [rateManual, setRateManual] = useState(false);
+    const [currencies, setCurrencies] = useState<any[]>([]);
     const [billingAddress, setBillingAddress] = useState('');
     const [description, setDescription] = useState('');
     const [reference, setReference] = useState('');
     const [useManualRef, setUseManualRef] = useState(false);
-    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: 'VAT 16%' }]);
+    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }]);
     const [showOptionsArea, setShowOptionsArea] = useState(false);
     const [freightItems, setFreightItems] = useState([{ id: Date.now(), description: 'Freight / Shipping', amount: '0', taxCode: 'No tax' }]);
     const [importCosts, setImportCosts] = useState({
@@ -103,7 +111,7 @@ const NewPurchaseInvoiceView = () => {
         customsDuty: '0'
     });
     const [options, setOptions] = useState({
-        amountsAreTaxInclusive: false,
+        amountsAreTaxInclusive: getDocumentDefaults().amountsAreTaxInclusive,
         columnLineNumber: true,
         columnDescription: true,
         columnDiscount: false,
@@ -132,19 +140,39 @@ const NewPurchaseInvoiceView = () => {
     }, [issueDate]);
 
     useEffect(() => {
+        const fetchRate = async () => {
+            try {
+                if (!currency || currency === 'ZMW') {
+                    setExchangeRate(1);
+                    return;
+                }
+                if (rateManual) return;
+                const rateData = await apiService.getExchangeRateAtDate(issueDate, currency);
+                setExchangeRate(rateData.rate || 1);
+            } catch (e) {
+                console.error('Failed to load exchange rate:', e);
+                if (!rateManual) setExchangeRate(1);
+            }
+        };
+        fetchRate();
+    }, [currency, issueDate, rateManual]);
+
+    useEffect(() => {
         const loadData = async () => {
             setIsLoading(true);
             try {
-                const [sups, itemsData, footersData, codesData] = await Promise.all([
+                const [sups, itemsData, footersData, codesData, currenciesData] = await Promise.all([
                     apiService.getSuppliers(),
                     apiService.getItems(),
                     apiService.getFooters(),
-                    apiService.getTaxCodes()
+                    apiService.getTaxCodes(),
+                    apiService.getCurrencies().catch(() => [])
                 ]);
                 setDbSuppliers(sups);
                 setDbItems(itemsData);
                 setDbFooters(footersData);
                 setTaxCodes(codesData);
+                setCurrencies(currenciesData || []);
 
                 const searchParams = new URLSearchParams(location.search);
                 const copyFromId = searchParams.get('copyFrom');
@@ -232,12 +260,17 @@ const NewPurchaseInvoiceView = () => {
                             const sup = sups.find((s: any) => s.id === sourceDoc.supplierId || s.id === sourceDoc.supplier_id || s.name === (sourceDoc.supplier?.name || sourceDoc.supplier));
                             if (sup) {
                                 setSupplier(sup.name);
-                                setCurrency(sup.currency?.split(' - ')[0] || 'ZMW');
+                                setCurrency(currencyCode(sourceDoc.currency || sourceDoc.docOptions?.currency || sup.currency));
                                 setBillingAddress(sup.billingAddress || '');
                             } else {
                                 setSupplier(sourceDoc.supplier?.name || sourceDoc.supplier || '');
-                                setCurrency(sourceDoc.currency || 'ZMW');
+                                setCurrency(currencyCode(sourceDoc.currency || sourceDoc.docOptions?.currency));
                                 setBillingAddress(sourceDoc.billingAddress || '');
+                            }
+                            const savedRate = Number(sourceDoc.exchangeRate ?? sourceDoc.docOptions?.exchangeRate);
+                            if (savedRate > 0) {
+                                setExchangeRate(savedRate);
+                                setRateManual(true);
                             }
 
                             if (copyFromId) {
@@ -301,8 +334,7 @@ const NewPurchaseInvoiceView = () => {
             }
 
             let taxAmount = 0;
-            const selectedTax = taxCodes.find(tc => tc.name === item.taxCode);
-            const taxRate = selectedTax ? (parseFloat(selectedTax.rate) / 100) : 0;
+            const taxRate = taxRateForCode(taxCodes, item.taxCode) / 100;
 
             if (taxRate > 0) {
                 if (options.amountsAreTaxInclusive) {
@@ -398,7 +430,8 @@ const NewPurchaseInvoiceView = () => {
             balanceDue: calculations.grandTotal,
             description: description,
             currency: currency,
-            docOptions: { ...options, freightItems, importCosts },
+            exchangeRate,
+            docOptions: { ...options, freightItems, importCosts, currency, exchangeRate },
             items: validItems.map((i, index) => {
                 const dbItem = dbItems.find(it => it.itemName === i.item);
                 const lc = calculations.lineCalcs[index];
@@ -500,7 +533,8 @@ const NewPurchaseInvoiceView = () => {
                                         setSupplier(supName);
                                         const selected = dbSuppliers.find(s => s.name === supName);
                                         if (selected) {
-                                            setCurrency(selected.currency?.split(' - ')[0] || 'ZMW');
+                                            setCurrency(currencyCode(selected.currency));
+                                            setRateManual(false);
                                             setBillingAddress(selected.billingAddress || '');
                                         }
                                     }} Icon={User}>
@@ -510,6 +544,19 @@ const NewPurchaseInvoiceView = () => {
                                 </div>
                                 <TextareaField label="Supplier Address" value={billingAddress} onChange={(e: any) => setBillingAddress(e.target.value)} placeholder="Physical address of supplier..." rows={3} />
                             </div>
+                            <CurrencyRateFields
+                                currency={currency}
+                                exchangeRate={exchangeRate}
+                                currencies={currencies}
+                                onCurrencyChange={(code) => {
+                                    setCurrency(code);
+                                    setRateManual(false);
+                                }}
+                                onRateChange={(rate) => {
+                                    setExchangeRate(rate);
+                                    setRateManual(true);
+                                }}
+                            />
                         </div>
 
                         <div className="space-y-6 pt-0 border-t border-slate-50">
@@ -537,7 +584,7 @@ const NewPurchaseInvoiceView = () => {
                                                             qty: i.qty?.toString() || '1',
                                                             unitPrice: i.unitPrice?.toString() || '0',
                                                             discount: '',
-                                                            taxCode: 'No tax'
+                                                            taxCode: DEFAULT_TAX_CODE
                                                         }));
                                                         setItems(newItems);
                                                         setSupplier(data.supplier || data.supplierId);
@@ -547,7 +594,7 @@ const NewPurchaseInvoiceView = () => {
                                     }} className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-200 transition-all">
                                         <Copy size={14} /> <span>Copy from Shipment</span>
                                     </button>
-                                    <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: 'No tax' }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
+                                    <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
                                         <Plus size={14} /> <span>Add Row</span>
                                     </button>
                                 </div>
@@ -757,13 +804,13 @@ const NewPurchaseInvoiceView = () => {
                                     </div>
                                     <div className="w-full max-w-xs space-y-2 flex flex-col justify-end">
                                         <div className="flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Subtotal ({currency})</span>
+                                            <span>{options.amountsAreTaxInclusive ? 'Net (excl. VAT)' : `Subtotal (${currency})`}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">
                                                 {calculations.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Tax Component {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
+                                            <span>{options.amountsAreTaxInclusive ? 'VAT 16%' : 'Tax Component'} {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">{calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         {options.freightIn && (
@@ -774,14 +821,17 @@ const NewPurchaseInvoiceView = () => {
                                                 </span>
                                             </div>
                                         )}
-                                        <div className="flex justify-end items-center bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/50 mt-2 h-14 gap-x-6">
+                                        <div className="flex justify-end items-center bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/50 mt-2 h-auto min-h-[56px] gap-x-6">
                                             <div className="flex-1 text-left">
                                                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em]">Total Payable</p>
                                             </div>
-                                            <h2 className="text-xl font-bold text-slate-900 tracking-tight tabular-nums flex items-baseline">
-                                                <span className="text-xs font-medium text-indigo-400 mr-2 uppercase">{currency}</span>
-                                                {calculations.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </h2>
+                                            <div className="text-right">
+                                                <h2 className="text-xl font-bold text-slate-900 tracking-tight tabular-nums flex items-baseline justify-end">
+                                                    <span className="text-xs font-medium text-indigo-400 mr-2 uppercase">{currency}</span>
+                                                    {calculations.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </h2>
+                                                <BaseEquivalent amount={calculations.grandTotal} currency={currency} exchangeRate={exchangeRate} />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

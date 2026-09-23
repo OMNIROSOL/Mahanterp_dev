@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Plus, ArrowRightLeft, Eye } from 'lucide-react';
+import { Search, Plus, ArrowRightLeft, Eye, Pencil } from 'lucide-react';
 import apiService from '../services/apiService';
+import RowActions from '../components/shared/RowActions';
 import { cn } from '../utils/cn';
 
 interface InterAccountTransfer {
@@ -97,7 +98,7 @@ const InterAccountTransfersView = () => {
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Received in</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Amount</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
-                                <th className="px-6 py-5 w-20"></th>
+                                <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -120,10 +121,11 @@ const InterAccountTransfersView = () => {
                                                 {t.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                                            <button onClick={(e) => { e.stopPropagation(); navigate(`/inter-account-transfers/view/${t.id}`); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
-                                                <Eye size={18} />
-                                            </button>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <RowActions
+                                                viewPath={`/inter-account-transfers/view/${t.id}`}
+                                                editPath={`/inter-account-transfers/edit/${t.id}`}
+                                            />
                                         </td>
                                     </tr>
                                 ))

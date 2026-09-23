@@ -83,10 +83,11 @@ model Invoice {
   grandTotal Decimal?      @default(0) @map("grand_total") @db.Decimal(15, 2)
   balanceDue Decimal?      @default(0) @map("balance_due") @db.Decimal(15, 2)
   status     String?       @default("Unpaid")
-  currency   String?       @default("ZMW")
-  docOptions Json?         @default("{}") @map("doc_options")
-  createdAt  DateTime?     @default(now()) @map("created_at") @db.Timestamptz(6)
-  items      InvoiceItem[]
+  currency     String?       @default("ZMW")
+  exchangeRate Decimal?      @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  docOptions   Json?         @default("{}") @map("doc_options")
+  createdAt    DateTime?     @default(now()) @map("created_at") @db.Timestamptz(6)
+  items        InvoiceItem[]
   customer   Customer      @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("invoices")
@@ -119,6 +120,7 @@ model SalesQuote {
   customerId     String      @map("customer_id") @db.Uuid
   description    String?
   currency       String?     @default("ZMW")
+  exchangeRate   Decimal?    @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   amount         Decimal?    @default(0) @db.Decimal(15, 2)
   status         String?     @default("Active")
   billingAddress String?     @map("billing_address")
@@ -159,6 +161,7 @@ model SalesOrder {
   customerId     String      @map("customer_id") @db.Uuid
   description    String?
   currency       String?     @default("ZMW")
+  exchangeRate   Decimal?    @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   amount         Decimal?    @default(0) @db.Decimal(15, 2)
   status         String?     @default("Pending")
   billingAddress String?     @map("billing_address")
@@ -217,6 +220,7 @@ model Receipt {
   description       String?
   amount            Decimal   @db.Decimal(15, 2)
   currency          String?   @default("ZMW")
+  exchangeRate      Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   status            String?   @default("Completed")
   items             Json?
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -234,6 +238,7 @@ model Payment {
   description     String?
   amount          Decimal   @db.Decimal(15, 2)
   currency        String?   @default("ZMW")
+  exchangeRate    Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   status          String?   @default("Completed")
   items           Json?
   createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -251,6 +256,7 @@ model InterAccountTransfer {
   description       String?
   amount            Decimal   @db.Decimal(15, 2)
   currency          String?   @default("ZMW")
+  exchangeRate      Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   status            String?   @default("Completed")
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -337,6 +343,7 @@ model ChartOfAccount {
   accountType       String             @map("account_type")
   isPaymentAccount  Boolean?           @default(false) @map("is_payment_account")
   inactive          Boolean?           @default(false)
+  currency          String?            @default("ZMW")
   ledgerEntries     LedgerEntry[]
   expenseClaimLines ExpenseClaimLine[]
 
@@ -350,6 +357,10 @@ model LedgerEntry {
   transactionDate    DateTime?      @default(dbgenerated("CURRENT_DATE")) @map("transaction_date") @db.Date
   debit              Decimal?       @default(0) @db.Decimal(15, 2)
   credit             Decimal?       @default(0) @db.Decimal(15, 2)
+  currency           String?        @default("ZMW")
+  exchangeRate       Decimal?       @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  foreignDebit       Decimal?       @default(0) @map("foreign_debit") @db.Decimal(15, 2)
+  foreignCredit      Decimal?       @default(0) @map("foreign_credit") @db.Decimal(15, 2)
   transactionType    String?        @map("transaction_type")
   source_document_id String?        @db.Uuid
   account            ChartOfAccount @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -496,6 +507,7 @@ model PurchaseEnquiry {
   supplierId     String                @map("supplier_id") @db.Uuid
   description    String?
   currency       String?               @default("ZMW")
+  exchangeRate   Decimal?              @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   amount         Decimal?              @default(0) @db.Decimal(15, 2)
   status         String?               @default("Active")
   docOptions     Json?                 @default("{}") @map("doc_options")
@@ -534,6 +546,7 @@ model PurchaseOrder {
   supplierId         String              @map("supplier_id") @db.Uuid
   description        String?
   currency           String?             @default("ZMW")
+  exchangeRate       Decimal?            @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   amount             Decimal?            @default(0) @db.Decimal(15, 2)
   status             String?             @default("Open")
   estimatedArrival   DateTime?           @map("estimated_arrival") @db.Date
@@ -570,15 +583,17 @@ model PurchaseOrderItem {
 }
 
 model invoices {
-  id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  reference   String
-  supplier_id String                @db.Uuid
-  description String?
-  grand_total Decimal?              @default(0) @db.Decimal(15, 2)
-  status      String?               @default("Unpaid")
-  due_date    DateTime?             @map("due_date") @db.Date
-  created_at  DateTime?             @default(now()) @db.Timestamptz(6)
-  docOptions  Json?                 @default("{}") @map("doc_options")
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reference    String
+  supplier_id  String                @db.Uuid
+  description  String?
+  grand_total  Decimal?              @default(0) @db.Decimal(15, 2)
+  status       String?               @default("Unpaid")
+  due_date     DateTime?             @map("due_date") @db.Date
+  created_at   DateTime?             @default(now()) @db.Timestamptz(6)
+  currency     String?               @default("ZMW")
+  exchangeRate Decimal?              @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  docOptions   Json?                 @default("{}") @map("doc_options")
   suppliers   suppliers             @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items       PurchaseInvoiceItem[]
 
@@ -611,6 +626,29 @@ model Division {
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("divisions")
+  @@schema("master")
+}
+
+model Employee {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String              @unique
+  name         String
+  department   String?
+  jobTitle     String?             @map("job_title")
+  email        String?
+  phone        String?
+  bankName     String?             @map("bank_name")
+  bankAccount  String?             @map("bank_account")
+  bankBranch   String?             @map("bank_branch")
+  tpin         String?
+  napsaNumber  String?             @map("napsa_number")
+  nhimaNumber  String?             @map("nhima_number")
+  nrc          String?
+  inactive     Boolean?            @default(false)
+  createdAt    DateTime?           @default(now()) @map("created_at") @db.Timestamptz(6)
+  payers       ExpenseClaimPayer[]
+
+  @@map("employees")
   @@schema("master")
 }
 
@@ -694,6 +732,7 @@ model ExchangeRate {
   date         DateTime @db.Date
   currencyCode String   @map("currency_code") @db.VarChar(3)
   rate         Decimal  @db.Decimal(15, 6)
+  isCurrent    Boolean  @default(false) @map("is_current")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   currency     Currency @relation(fields: [currencyCode], references: [code])
@@ -786,6 +825,8 @@ model Shipment {
   overweight        Decimal?  @default(0) @db.Decimal(15, 2)
   bankCharges       Decimal?  @default(0) @map("bank_charges") @db.Decimal(15, 2)
   exchangeRate      Decimal?  @default(1) @map("exchange_rate") @db.Decimal(10, 4)
+  purchaseInvoiceId String?   @map("purchase_invoice_id") @db.Uuid
+  chargeCurrencies  Json?     @map("charge_currencies")
 
   items    ShipmentItem[]
   supplier suppliers      @relation(fields: [supplierId], references: [id], onDelete: NoAction)
@@ -826,6 +867,10 @@ model ProcurementCosting {
   otherCharges      Decimal   @map("other_charges") @db.Decimal(15, 2)
   landedCost        Decimal   @map("landed_cost") @db.Decimal(15, 2)
   costPerUnit       Decimal   @map("cost_per_unit") @db.Decimal(15, 2)
+  purchaseInvoiceId String?   @map("purchase_invoice_id") @db.Uuid
+  shipmentId        String?   @map("shipment_id") @db.Uuid
+  exchangeRate      Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  costingMeta       Json?     @map("costing_meta")
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   item              Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
@@ -936,11 +981,13 @@ model AuditHistory {
 }
 
 model ExpenseClaimPayer {
-  id       String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code     String         @unique
-  name     String
-  inactive Boolean?       @default(false)
-  claims   ExpenseClaim[]
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code       String         @unique
+  name       String
+  inactive   Boolean?       @default(false)
+  employeeId String?        @map("employee_id") @db.Uuid
+  employee   Employee?      @relation(fields: [employeeId], references: [id])
+  claims     ExpenseClaim[]
 
   @@map("expense_claim_payers")
   @@schema("finance")
@@ -999,9 +1046,10 @@ model CreditNote {
   grandTotal  Decimal?         @default(0) @map("grand_total") @db.Decimal(15, 2)
   balance     Decimal?         @default(0) @db.Decimal(15, 2)
   status      String?          @default("Open")
-  currency    String?          @default("ZMW")
-  docOptions  Json?            @default("{}") @map("doc_options")
-  description String?
+  currency     String?          @default("ZMW")
+  exchangeRate Decimal?         @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  docOptions   Json?            @default("{}") @map("doc_options")
+  description  String?
   createdAt   DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
   items       CreditNoteItem[]
   customer    Customer         @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1058,10 +1106,11 @@ model DebitNote {
   amount     Decimal?        @default(0) @db.Decimal(15, 2)
   status     String?         @default("Draft")
   description String?
-  currency   String?         @default("ZMW")
-  docOptions Json?           @default("{}") @map("doc_options")
-  createdAt  DateTime?       @default(now()) @map("created_at") @db.Timestamptz(6)
-  items      DebitNoteItem[]
+  currency     String?         @default("ZMW")
+  exchangeRate Decimal?        @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  docOptions   Json?           @default("{}") @map("doc_options")
+  createdAt    DateTime?       @default(now()) @map("created_at") @db.Timestamptz(6)
+  items        DebitNoteItem[]
   supplier   suppliers?      @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customer   Customer?       @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1085,4 +1134,48 @@ model DebitNoteItem {
 
   @@map("debit_note_items")
   @@schema("purchase")
+}
+
+model DocumentAttachment {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentType String   @map("document_type")
+  documentId   String   @map("document_id") @db.Uuid
+  fileName     String   @map("file_name")
+  mimeType     String?  @map("mime_type")
+  fileSize     Int?     @map("file_size")
+  storagePath  String   @map("storage_path")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  @@index([documentType, documentId])
+  @@map("document_attachments")
+  @@schema("finance")
+}
+
+model BankStatement {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String?             @map("account_id") @db.Uuid
+  accountName String              @map("account_name")
+  fileName    String              @map("file_name")
+  importedAt  DateTime            @default(now()) @map("imported_at") @db.Timestamptz(6)
+  lines       BankStatementLine[]
+
+  @@map("bank_statements")
+  @@schema("finance")
+}
+
+model BankStatementLine {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  statementId       String        @map("statement_id") @db.Uuid
+  lineDate          DateTime      @map("line_date") @db.Date
+  description       String?
+  amount            Decimal       @db.Decimal(15, 2)
+  reference         String?
+  status            String        @default("unmatched")
+  matchedType       String?       @map("matched_type")
+  matchedId         String?       @map("matched_id") @db.Uuid
+  matchedReference  String?       @map("matched_reference")
+  statement         BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+
+  @@map("bank_statement_lines")
+  @@schema("finance")
 }

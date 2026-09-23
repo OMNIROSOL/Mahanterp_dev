@@ -6,6 +6,7 @@ import apiService from '../services/apiService';
 import { ScreenPermission } from '../types';
 import DataTable from '../components/shared/DataTable';
 import Badge from '../components/shared/Badge';
+import RowActions from '../components/shared/RowActions';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const PurchaseInvoicesView = () => {
@@ -196,10 +197,10 @@ const PurchaseInvoicesView = () => {
             id: 'Actions',
             header: 'Actions',
             accessor: (inv: any) => (
-                <div className="flex items-center gap-2">
-                    <button onClick={() => navigate(`/purchase-invoices/view/${inv.id}`)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg" title="View"><Eye size={14} /></button>
-                    <button onClick={() => navigate(`/purchase-invoices/edit/${inv.id}`)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Edit"><Edit size={14} /></button>
-                </div>
+                <RowActions
+                    viewPath={`/purchase-invoices/view/${inv.id}`}
+                    editPath={`/purchase-invoices/edit/${inv.id}`}
+                />
             )
         },
         {

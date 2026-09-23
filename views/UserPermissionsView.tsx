@@ -420,7 +420,7 @@ const UserPermissionsView: React.FC = () => {
                   type="text" 
                   value={newUser.name}
                   onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  className="w-full bg-[#F9FAFB] border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
                   placeholder="e.g. Jane Doe"
                 />
               </div>
@@ -430,7 +430,7 @@ const UserPermissionsView: React.FC = () => {
                   type="text" 
                   value={newUser.username || ''}
                   onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className="w-full bg-[#F9FAFB] border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
                   placeholder="e.g. jane_staff"
                 />
               </div>
@@ -441,7 +441,7 @@ const UserPermissionsView: React.FC = () => {
                   type="email" 
                   value={newUser.email}
                   onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="w-full bg-[#F9FAFB] border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
                   placeholder="jane@example.com"
                 />
               </div>
@@ -450,7 +450,7 @@ const UserPermissionsView: React.FC = () => {
                 <select 
                   value={newUser.roleId || ''}
                   onChange={(e) => setNewUser({ ...newUser, roleId: e.target.value })}
-                  className="w-full bg-[#F9FAFB] border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none appearance-none"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none appearance-none"
                 >
                   <option value="" disabled>Select Role</option>
                   {roles.map((r: any) => (
@@ -464,7 +464,7 @@ const UserPermissionsView: React.FC = () => {
                   type="password" 
                   value={newUser.password || ''}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="w-full bg-[#F9FAFB] border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-primary rounded-xl py-2 px-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-primary/5 transition-all outline-none"
                   placeholder="Enter new password"
                 />
               </div>

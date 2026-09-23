@@ -80,7 +80,7 @@ export function SearchableSelect({ value, options, onChange, placeholder = 'Sele
     return (
         <div ref={wrapperRef} className={`relative ${className}`}>
             <div 
-                className="w-full flex items-center justify-between bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] cursor-pointer"
+                className="w-full flex items-center justify-between bg-transparent border-none p-0 text-sm font-bold text-blue-600 cursor-pointer"
                 onClick={(e) => {
                     e.stopPropagation();
                     toggleOpen();

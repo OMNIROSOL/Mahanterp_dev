@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { SalesQuote, ApprovalRequest, Division, InventoryUnitCost } from '../types';
 import apiService from '../services/apiService';
+import { CurrencyRateFields, BaseEquivalent } from '../components/shared/CurrencyRateFields';
+import { currencyCode } from '../utils/currency';
+import { DEFAULT_TAX_CODE, taxRateForCode } from '../utils/tax';
+import { getDocumentDefaults } from '../utils/documentDefaults';
+import { getApprovalSettings } from '../utils/approvalSettings';
 import Card from '../components/shared/Card';
 import Button from '../components/shared/Button';
 import FormInput from '../components/shared/FormInput';
@@ -145,6 +150,8 @@ const EditSalesQuoteView = () => {
     const [customer, setCustomer] = useState('');
     const [currency, setCurrency] = useState('ZMW');
     const [exchangeRate, setExchangeRate] = useState(1);
+    const [rateManual, setRateManual] = useState(false);
+    const [currencies, setCurrencies] = useState<any[]>([]);
     const [decimalPlaces, setDecimalPlaces] = useState(2);
     const [billingAddress, setBillingAddress] = useState('');
     const [description, setDescription] = useState('');
@@ -163,9 +170,9 @@ const EditSalesQuoteView = () => {
     const [dbInvoices, setDbInvoices] = useState<any[]>([]);
     const [dbQuotes, setDbQuotes] = useState<any[]>([]);
     const [availableDivisions, setAvailableDivisions] = useState<Division[]>([]);
-    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: '' }]);
+    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }]);
     const [options, setOptions] = useState({
-        amountsAreTaxInclusive: false,
+        amountsAreTaxInclusive: getDocumentDefaults().amountsAreTaxInclusive,
         rounding: false,
         roundingType: 'Round to nearest',
         columnLineNumber: true,
@@ -288,7 +295,12 @@ const EditSalesQuoteView = () => {
                         setIssueDate(parsedIssueDate);
                         setExpiryDays(quote.expiryDays?.toString() || '30');
                         setCustomer(quote.customer?.name || quote.customer || '');
-                        setCurrency(quote.currency || quote.customer?.currency?.split(' - ')[0] || 'ZMW');
+                        setCurrency(currencyCode(quote.currency || quote.docOptions?.currency || quote.customer?.currency));
+                        const savedRate = Number(quote.exchangeRate ?? quote.docOptions?.exchangeRate);
+                        if (savedRate > 0) {
+                            setExchangeRate(savedRate);
+                            setRateManual(true);
+                        }
                         setBillingAddress(quote.billingAddress || quote.customer?.billingAddress || '');
 
                         if (copyFromId) {
@@ -313,7 +325,7 @@ const EditSalesQuoteView = () => {
                                 unitPrice: i.unitPrice ? i.unitPrice.toString() : '0',
                                 discount: i.discount ? i.discount.toString() : '',
                                 division: i.division || 'General',
-                                taxCode: i.taxCode || ''
+                                taxCode: i.taxCode || DEFAULT_TAX_CODE
                             })));
                         }
 
@@ -336,7 +348,7 @@ const EditSalesQuoteView = () => {
                 setUseManualRef(false);
                 setDescription('');
                 setStatus('Active');
-                setItems([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '', discount: '', taxCode: '' }]);
+                setItems([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '', discount: '', taxCode: DEFAULT_TAX_CODE }]);
             }
         };
         loadQuote();
@@ -371,32 +383,37 @@ const EditSalesQuoteView = () => {
             c.id === customer
         );
         if (selected) {
-            const currencyCode = selected.currency?.split(' - ')[0] || 'ZMW';
-            if (currencyCode !== currency) {
-                setCurrency(currencyCode);
+            const nextCurrency = currencyCode(selected.currency);
+            if (nextCurrency !== currency) {
+                setCurrency(nextCurrency);
+                setRateManual(false);
             }
         }
     }, [customer, customers, currency]);
 
-    // Update exchange rate when currency changes
+    // Update exchange rate when currency or date changes
     useEffect(() => {
-        try {
-            const savedCurrencies = localStorage.getItem('erp_currencies');
-            if (savedCurrencies) {
-                const parsed = JSON.parse(savedCurrencies);
-                const currentCurrencyObj = parsed.find((c: any) => c.code === currency);
-                setExchangeRate(currentCurrencyObj?.exchangeRate || 1);
-                setDecimalPlaces(currentCurrencyObj?.decimalPlaces ?? 2);
-            } else {
-                setExchangeRate(1);
+        const fetchRate = async () => {
+            try {
+                const currenciesData = await apiService.getCurrencies().catch(() => []);
+                setCurrencies(currenciesData || []);
+                const currObj = (currenciesData || []).find((c: any) => c.code === currency);
+                setDecimalPlaces(currObj?.decimalPlaces ?? 2);
+                if (!currency || currency === 'ZMW') {
+                    setExchangeRate(1);
+                    return;
+                }
+                if (rateManual) return;
+                const rateData = await apiService.getExchangeRateAtDate(issueDate, currency);
+                setExchangeRate(rateData.rate || 1);
+            } catch (e) {
+                console.error('Failed to load exchange rates:', e);
+                if (!rateManual) setExchangeRate(1);
                 setDecimalPlaces(2);
             }
-        } catch (e) {
-            console.error('Failed to load exchange rates:', e);
-            setExchangeRate(1);
-            setDecimalPlaces(2);
-        }
-    }, [currency]);
+        };
+        fetchRate();
+    }, [currency, issueDate, rateManual]);
 
     const itemHistory = useMemo(() => {
         const global: Record<string, any[]> = {};
@@ -464,9 +481,8 @@ const EditSalesQuoteView = () => {
             }
 
             let taxAmount = 0;
-            const selectedTax = taxCodes.find(tc => tc.name === item.taxCode);
-            if (selectedTax) {
-                const taxRate = parseFloat(selectedTax.rate) / 100;
+            const taxRate = taxRateForCode(taxCodes, item.taxCode) / 100;
+            if (taxRate > 0) {
                 if (options.amountsAreTaxInclusive) {
                     taxAmount = netTotal - (netTotal / (1 + taxRate));
                     netTotal = netTotal - taxAmount;
@@ -540,11 +556,11 @@ const EditSalesQuoteView = () => {
     }, [unitCosts, marginThreshold, exchangeRate, decimalPlaces]);
 
     const approvalReason = useMemo(() => {
+        const settings = getApprovalSettings();
         let reason = '';
         const itemsToValidate = items.filter(i => i.item !== 'Select Item');
 
-        // Check 1: High Value Approval
-        if (calculations.grandTotal > 100000) {
+        if (settings.enableValueApproval && calculations.grandTotal > settings.minAmountForApproval) {
             reason += `High value document (Total: ${calculations.grandTotal.toLocaleString()}) requires manager approval. `;
         }
 
@@ -557,24 +573,28 @@ const EditSalesQuoteView = () => {
                 const stock = parseFloat(inventoryItem.qtyOnHand || 0);
                 const qty = parseFloat(item.qty) || 0;
 
-                if (qty > stock) {
+                if (settings.enableStockApproval && qty > stock) {
                     reason += `Insufficient stock for ${item.item} (Req: ${qty}, Avail: ${stock}). `;
                 }
 
                 const minPrice = getMinSellingPrice(item.itemId, item.division, sellingPrice);
                 const convertedPurchasePrice = purchasePrice / exchangeRate;
 
-                if (price < convertedPurchasePrice) {
-                    reason += `Price for ${item.item} (${price}) is below purchase price (${convertedPurchasePrice.toFixed(2)}). `;
-                } else if (price < minPrice) {
-                    reason += `Price for ${item.item} (${price}) is below allowed minimum selling price (min: ${minPrice.toFixed(2)}). `;
+                if (settings.enablePriceApproval) {
+                    if (price < convertedPurchasePrice) {
+                        reason += `Price for ${item.item} (${price}) is below purchase price (${convertedPurchasePrice.toFixed(2)}). `;
+                    } else if (price < minPrice) {
+                        reason += `Price for ${item.item} (${price}) is below allowed minimum selling price (min: ${minPrice.toFixed(2)}). `;
+                    }
                 }
             }
         }
         return reason.trim();
-    }, [items, inventoryMap, calculations.grandTotal, getMinSellingPrice]);
+    }, [items, inventoryMap, calculations.grandTotal, getMinSellingPrice, exchangeRate]);
 
     const requiresApproval = useMemo(() => {
+        const settings = getApprovalSettings();
+        if (!settings.quotesRequireApproval) return false;
         return Boolean(approvalReason);
     }, [approvalReason]);
 
@@ -609,36 +629,46 @@ const EditSalesQuoteView = () => {
             return;
         }
 
-        const validItems = items.filter(i => i.item && i.item !== 'Select Item' && i.item !== '' && i.itemId);
-        if (validItems.length === 0) {
-            alert('Please select at least one valid item.');
+        const selectedCustomer = customers.find(c =>
+            c.name?.trim().toLowerCase() === customer.trim().toLowerCase() ||
+            c.id === customer
+        );
+        if (!selectedCustomer) {
+            alert('Selected customer not found.');
             return;
         }
 
-        const selectedCustomer = customers.find(c => c.name === customer);
-        if (!selectedCustomer) {
-            alert('Selected customer not found.');
+        const validItems = items.map(i => {
+            const inv = inventoryMap[i.item];
+            return {
+                ...i,
+                itemId: i.itemId || inv?.id || '',
+            };
+        }).filter(i => i.item && i.item !== 'Select Item' && i.item !== '' && i.itemId);
+        if (validItems.length === 0) {
+            alert('Please select at least one inventory item on the quote before saving.');
             return;
         }
 
         const currentUser = apiService.getCurrentUser();
         const updatedOptions = {
             ...options,
-            requestedBy: forceManualApproval ? currentUser.name : (options as any).requestedBy,
+            requestedBy: forceManualApproval ? (currentUser?.name || currentUser?.email || '') : (options as any).requestedBy,
             approvalReason: forceManualApproval ? approvalReason : (options as any).approvalReason
         };
 
-        const quoteData = {
+        const buildPayload = (ref: string) => ({
             customerId: selectedCustomer.id,
-            reference: reference,
+            reference: ref,
             amount: calculations.grandTotal,
             currency: currency,
+            exchangeRate,
             description: description,
             billingAddress: billingAddress,
             expiryDays: parseInt(expiryDays) || 30,
-            issueDate: issueDate, // Pass the date from state
+            issueDate: issueDate,
             status: forceManualApproval ? 'Pending Approval' : (isEditing ? status : 'Active'),
-            docOptions: { ...updatedOptions, division },
+            docOptions: { ...updatedOptions, division, currency, exchangeRate },
             items: validItems.map(i => ({
                 itemId: i.itemId,
                 description: i.description,
@@ -649,14 +679,25 @@ const EditSalesQuoteView = () => {
                 taxCode: i.taxCode,
                 totalAmount: parseFloat(i.qty) * parseFloat(i.unitPrice)
             }))
-        };
+        });
 
+        const isUniqueError = (err: any) => {
+            const msg = String(err.response?.data?.error || err.message || '');
+            return /unique|already exists|duplicate/i.test(msg);
+        };
 
         try {
             if (isEditing) {
-                await apiService.updateQuote(id!, quoteData);
+                await apiService.updateQuote(id!, buildPayload(reference));
             } else {
-                await apiService.createQuote(quoteData);
+                try {
+                    await apiService.createQuote(buildPayload(reference));
+                } catch (err: any) {
+                    if (!isUniqueError(err)) throw err;
+                    const nextRef = await apiService.getNextReference('quote');
+                    setReference(nextRef);
+                    await apiService.createQuote(buildPayload(nextRef));
+                }
             }
             navigate('/sales-quotes');
         } catch (err: any) {
@@ -756,8 +797,8 @@ const EditSalesQuoteView = () => {
                                         setCustomer(custName);
                                         const selected = customers.find(c => c.name === custName);
                                         if (selected) {
-                                            const currencyCode = selected.currency?.split(' - ')[0] || 'ZMW';
-                                            setCurrency(currencyCode);
+                                            setCurrency(currencyCode(selected.currency));
+                                            setRateManual(false);
                                             setBillingAddress(selected.billingAddress || '');
                                         }
                                     }} Icon={User}>
@@ -768,6 +809,19 @@ const EditSalesQuoteView = () => {
                                 </div>
                                 <TextareaField label="Billing Address" value={billingAddress} onChange={(e: any) => setBillingAddress(e.target.value)} placeholder="Physical address for billing..." rows={5} />
                             </div>
+                            <CurrencyRateFields
+                                currency={currency}
+                                exchangeRate={exchangeRate}
+                                currencies={currencies}
+                                onCurrencyChange={(code) => {
+                                    setCurrency(code);
+                                    setRateManual(false);
+                                }}
+                                onRateChange={(rate) => {
+                                    setExchangeRate(rate);
+                                    setRateManual(true);
+                                }}
+                            />
                         </div>
 
                         {/* Items Section (Simplified Table) */}
@@ -780,7 +834,7 @@ const EditSalesQuoteView = () => {
                                     <h2 className="text-lg font-black text-slate-800 tracking-tight">Line Items</h2>
                                 </div>
                                 <button
-                                    onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: '' }])}
+                                    onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }])}
                                     className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all"
                                 >
                                     <Plus size={14} /> <span>Add New Row</span>
@@ -1012,14 +1066,14 @@ const EditSalesQuoteView = () => {
                                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end pr-24">
                                     <div className="w-full max-w-sm space-y-2">
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Subtotal ({currency})</span>
+                                            <span>{options.amountsAreTaxInclusive ? 'Net (excl. VAT)' : `Subtotal (${currency})`}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">
                                                 <span className="text-[10px] font-black text-slate-400 mr-1 opacity-50">{currency}</span>
                                                 {calculations.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Tax Component {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
+                                            <span>{options.amountsAreTaxInclusive ? 'VAT 16%' : 'Tax Component'} {calculations.subtotal > 0 && calculations.totalTax > 0 ? `(${((calculations.totalTax / calculations.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">{calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="flex justify-end items-center bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 mt-4 h-16 gap-x-6">
@@ -1030,6 +1084,9 @@ const EditSalesQuoteView = () => {
                                                 <span className="text-xs font-medium text-indigo-400 mr-2 uppercase">{currency}</span>
                                                 {calculations.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </h2>
+                                        </div>
+                                        <div className="flex justify-end mt-1">
+                                            <BaseEquivalent amount={calculations.grandTotal} currency={currency} exchangeRate={exchangeRate} />
                                         </div>
                                     </div>
                                 </div>

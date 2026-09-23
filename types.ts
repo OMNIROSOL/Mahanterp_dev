@@ -6,6 +6,26 @@ export interface Division {
   createdAt?: string;
 }
 
+export interface Employee {
+  id: string;
+  code: string;
+  name: string;
+  department?: string | null;
+  jobTitle?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  bankName?: string | null;
+  bankAccount?: string | null;
+  bankBranch?: string | null;
+  tpin?: string | null;
+  napsaNumber?: string | null;
+  nhimaNumber?: string | null;
+  nrc?: string | null;
+  inactive?: boolean | null;
+  createdAt?: string;
+  payers?: { id: string; code: string; name: string; inactive?: boolean | null }[];
+}
+
 export interface Unit {
   id: string;
   name: string;
@@ -177,6 +197,9 @@ export interface Account {
   accountType?: string;
   isPaymentAccount?: boolean;
   code?: string;
+  currency?: string;
+  foreignBalance?: number;
+  balanceBase?: number;
 }
 
 export interface FinancialSummary {
@@ -194,7 +217,9 @@ export interface Customer {
   qtyToDeliver?: number;
   uninvoiced?: number;
   debit?: number;
+  debitBase?: number;
   advance?: number;
+  advanceBase?: number;
   accountsReceivable?: number;
   status: 'Paid' | 'Unpaid';
   inactive?: boolean;
@@ -209,6 +234,7 @@ export interface Customer {
   currency?: string;
   creditLimit?: string;
   documentation?: string;
+  balanceBase?: number;
 }
 export interface DeliveryNote {
   id: string;
@@ -405,9 +431,12 @@ export interface Supplier {
   division?: string;
   accountsPayable?: number;
   debit?: number;
+  debitBase?: number;
   advance?: number;
+  advanceBase?: number;
   status: 'Paid' | 'Unpaid' | 'Overdue';
   balance: number;
+  balanceBase?: number;
   email?: string;
   billingAddress?: string;
   currency?: string;

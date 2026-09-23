@@ -663,7 +663,7 @@ const CustomersView = () => {
                             </tr>
                         ))}
                     </tbody>
-                    <tfoot className="bg-[#f8fafc]/80 border-t-2 border-slate-200">
+                    <tfoot className="bg-slate-50/80 border-t-2 border-slate-200">
                         <tr>
                             {isBatchViewMode && (
                                 <td className="px-6 py-4 border-b border-transparent"></td>

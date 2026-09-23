@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import apiService from '../services/apiService';
 import DataTable from '../components/shared/DataTable';
 import Button from '../components/shared/Button';
+import RowActions from '../components/shared/RowActions';
 import { 
-    Plus, Search, FileText, ChevronRight, Eye, Edit, Copy, 
+    Plus, Search, FileText, HelpCircle,
     ChevronDown, ChevronUp, ArrowUpDown
 } from 'lucide-react';
-import { cn } from '../utils/cn';
 
 const ExpenseClaimsView = () => {
     const navigate = useNavigate();
@@ -89,10 +89,7 @@ const ExpenseClaimsView = () => {
             header: <div className="text-center w-16">Actions</div>,
             className: 'w-16 px-2 text-center',
             accessor: (c: any) => (
-                <div className="flex items-center justify-center gap-1">
-                    <button onClick={() => navigate(`/expense-claims/view/${c.id}`)} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-blue-600 transition-colors" title="View"><Eye size={14} /></button>
-                    <button onClick={() => navigate(`/expense-claims/edit/${c.id}`)} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-blue-600 transition-colors" title="Edit"><Edit size={14} /></button>
-                </div>
+                <RowActions viewPath={`/expense-claims/view/${c.id}`} editPath={`/expense-claims/edit/${c.id}`} />
             )
         },
         {
@@ -148,6 +145,9 @@ const ExpenseClaimsView = () => {
                     </div>
                     
                     <div className="flex items-center gap-3">
+                        <Button variant="secondary" onClick={() => navigate('/employees')} className="h-10">
+                            Employees
+                        </Button>
                         <Button variant="secondary" onClick={() => navigate('/expense-claim-payers')} className="h-10">
                             Manage Payers
                         </Button>
@@ -158,6 +158,13 @@ const ExpenseClaimsView = () => {
                     </div>
                 </div>
                 
+                <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/70 p-4 flex gap-3 text-sm text-sky-900">
+                    <HelpCircle size={18} className="shrink-0 mt-0.5" />
+                    <p>
+                        <span className="font-bold">Paid by</span> is an expense claim payer, not a supplier.
+                        Add one under Accounting → Expense Claim Payers, or from Master Data → Employees → Add as expense payer.
+                    </p>
+                </div>
                 <div className="flex items-center gap-4 mt-6">
                     <div className="relative flex-1 max-w-2xl">
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

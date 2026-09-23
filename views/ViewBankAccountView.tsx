@@ -2,10 +2,11 @@ import React from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import apiService from '../services/apiService';
 import { Account } from '../types';
+import { currencyCode, isBaseCurrency, BASE_CURRENCY } from '../utils/currency';
 
-const formatMoney = (val: number) => {
+const formatMoney = (val: number, ccy = BASE_CURRENCY) => {
     if (!val) return '-';
-    return `ZMW ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${ccy} ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 const formatDate = (d: string | Date | null) => {
@@ -54,16 +55,16 @@ const ViewBankAccountView = () => {
     if (!account) return <div className="p-8 text-center text-gray-500 font-black uppercase tracking-widest">Bank Account not found.</div>;
 
     return (
-        <div className="bg-[#f3f4f6] min-h-full flex flex-col">
+        <div className="bg-slate-100 min-h-full flex flex-col">
             <div className="bg-white px-4 py-2 border-b border-gray-200 flex items-center text-[11px] text-gray-500 space-x-1.5 select-none no-print">
-                <i className="fas fa-folder-open text-[#90a4ae]"></i>
+                <i className="fas fa-folder-open text-slate-400"></i>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
                 <Link to="/account" className="hover:text-[#2196f3]">Bank and Cash Accounts</Link>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
                 <span className="text-gray-400">View</span>
             </div>
 
-            <div className="bg-[#f9fafb] px-4 py-3 border-b border-gray-200 flex items-center justify-between no-print">
+            <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between no-print">
                 <div className="flex items-center space-x-3">
                     <span className="text-[13px] text-gray-400 mr-2">Bank Account Details</span>
                     <button onClick={() => navigate(`/account/edit/${account.id}`)} className="bg-white border border-gray-300 px-4 py-1.5 text-[12px] font-medium text-gray-700 rounded shadow-sm hover:bg-gray-50">Edit</button>
@@ -71,8 +72,8 @@ const ViewBankAccountView = () => {
                 </div>
             </div>
 
-            <div className="flex-1 p-6 flex justify-center overflow-auto bg-[#f3f4f6]">
-                <div className="bg-white shadow-xl p-12 w-full max-w-[950px] min-h-[600px] relative font-sans text-gray-900 border border-gray-200">
+            <div className="flex-1 p-6 flex justify-center overflow-auto bg-slate-100">
+                <div className="print-container bg-white shadow-xl p-12 w-full max-w-[950px] min-h-[600px] relative font-sans text-gray-900 border border-gray-200">
                     <div className="flex justify-between items-start mb-10">
                         <h1 className="text-4xl font-bold text-gray-900">Bank Account</h1>
                         <div className="text-right">
@@ -99,7 +100,16 @@ const ViewBankAccountView = () => {
                             </div>
                             <div>
                                 <span className="font-bold block text-gray-400 uppercase text-[10px]">Balance</span>
-                                <span className="text-lg font-bold text-[#2196f3]">{formatMoney(account.balance || 0)}</span>
+                                <span className="text-lg font-bold text-[#2196f3]">
+                                    {isBaseCurrency(account.currency)
+                                        ? formatMoney(account.balance || 0)
+                                        : `${currencyCode(account.currency)} ${(account.foreignBalance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                                </span>
+                                {!isBaseCurrency(account.currency) && (
+                                    <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                        {formatMoney(account.balanceBase ?? account.balance ?? 0)}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -124,8 +134,18 @@ const ViewBankAccountView = () => {
                                         <tr key={entry.id} className="border-b border-gray-50">
                                             <td className="py-2 text-[13px] text-gray-600">{formatDate(entry.date)}</td>
                                             <td className="py-2 text-[13px] font-semibold text-gray-800">{entry.transactionType || '—'}</td>
-                                            <td className="py-2 text-[13px] text-right">{entry.debit ? formatMoney(entry.debit) : '-'}</td>
-                                            <td className="py-2 text-[13px] text-right">{entry.credit ? formatMoney(entry.credit) : '-'}</td>
+                                            <td className="py-2 text-[13px] text-right">
+                                                {entry.debit ? formatMoney(entry.debit) : '-'}
+                                                {entry.foreignDebit ? (
+                                                    <div className="text-[10px] text-slate-400">{entry.currency || ''} {Number(entry.foreignDebit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                                ) : null}
+                                            </td>
+                                            <td className="py-2 text-[13px] text-right">
+                                                {entry.credit ? formatMoney(entry.credit) : '-'}
+                                                {entry.foreignCredit ? (
+                                                    <div className="text-[10px] text-slate-400">{entry.currency || ''} {Number(entry.foreignCredit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                                ) : null}
+                                            </td>
                                             <td className="py-2 text-[13px] font-bold text-right">{formatMoney(entry.balance)}</td>
                                         </tr>
                                     ))}

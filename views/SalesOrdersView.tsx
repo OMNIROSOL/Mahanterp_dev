@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatTimestamp } from '../utils/dateUtils';
+import RowActions from '../components/shared/RowActions';
 
 const SalesOrdersView = () => {
     const navigate = useNavigate();
@@ -304,24 +305,11 @@ const SalesOrdersView = () => {
             id: 'Actions',
             header: 'Actions',
             accessor: (o: any) => (
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => navigate(`/sales-orders/view/${o.id}`)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                        title="View Details"
-                    >
-                        <Eye size={14} />
-                    </button>
-                    {perms?.edit !== false && (
-                        <button
-                            onClick={() => navigate(`/sales-orders/edit/${o.id}`)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all font-bold"
-                            title="Edit Order"
-                        >
-                            <Edit size={14} />
-                        </button>
-                    )}
-                </div>
+                <RowActions
+                    viewPath={`/sales-orders/view/${o.id}`}
+                    editPath={`/sales-orders/edit/${o.id}`}
+                    showEdit={perms?.edit !== false}
+                />
             )
         },
         {

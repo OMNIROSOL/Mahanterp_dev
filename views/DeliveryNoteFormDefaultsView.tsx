@@ -40,9 +40,9 @@ const DeliveryNoteFormDefaultsView = () => {
     };
 
     return (
-        <div className="bg-[#f9fafb] min-h-full pb-20 font-sans">
-            <div className="bg-white px-4 py-2 border-b border-gray-200 flex items-center text-[12px] text-[#78909c] space-x-1.5 select-none no-print">
-                <i className="fas fa-folder-open text-[#90a4ae]"></i>
+        <div className="bg-slate-50 min-h-full pb-20 font-sans">
+            <div className="bg-white px-4 py-2 border-b border-gray-200 flex items-center text-[12px] text-slate-400 space-x-1.5 select-none no-print">
+                <i className="fas fa-folder-open text-slate-400"></i>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
                 <Link to="/delivery-notes" className="hover:text-[#2196f3]">Delivery Notes</Link>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>

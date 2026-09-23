@@ -20,9 +20,12 @@ import {
     CheckCircle2,
     XCircle,
     Package,
-    Loader2
+    Loader2,
+    Calculator
 } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { BASE_CURRENCY, landedCostTotals } from '../utils/landedCost';
+import DocumentPrintHeader, { DOCUMENT_PRINT_CSS } from '../components/shared/DocumentPrintHeader';
 
 const ViewPurchaseInvoiceView = () => {
     const { id } = useParams();
@@ -36,17 +39,19 @@ const ViewPurchaseInvoiceView = () => {
     const [taxCodes, setTaxCodes] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+    const [costingRows, setCostingRows] = useState<any[]>([]);
 
     useEffect(() => {
         const fetchData = async () => {
             if (!id) return;
             setIsLoading(true);
             try {
-                const [inv, invs, supps, codes] = await Promise.all([
+                const [inv, invs, supps, codes, costing] = await Promise.all([
                     apiService.getPurchaseInvoice(id),
                     apiService.getPurchaseInvoices(),
                     apiService.getSuppliers(),
-                    apiService.getTaxCodes().catch(() => [])
+                    apiService.getTaxCodes().catch(() => []),
+                    apiService.getProcurementCostingReport({ invoiceId: id }).catch(() => [])
                 ]);
                 setInvoice(inv ? {
                     ...inv,
@@ -62,6 +67,7 @@ const ViewPurchaseInvoiceView = () => {
                 })));
                 setAllSuppliers(supps);
                 setTaxCodes(codes);
+                setCostingRows(Array.isArray(costing) ? costing : []);
             } catch (err) {
                 console.error('Failed to fetch purchase invoice data:', err);
             } finally {
@@ -85,7 +91,7 @@ const ViewPurchaseInvoiceView = () => {
     const totals = useMemo(() => {
         if (!invoice) return { subtotal: 0, tax: 0, total: 0 };
         const invoiceAmount = parseFloat(invoice.invoiceAmount as any) || 0;
-        const options = invoice.options || {};
+        const options = (invoice as any).docOptions || invoice.options || {};
         const isTaxInclusive = options.amountsAreTaxInclusive || false;
 
         if (!invoice.items || invoice.items.length === 0) {
@@ -134,6 +140,23 @@ const ViewPurchaseInvoiceView = () => {
         return { subtotal, tax, total: invoiceAmount || subtotal + tax };
     }, [invoice, taxCodes]);
 
+    const costingSummary = useMemo(() => {
+        if (!costingRows.length) return null;
+        const meta = costingRows[0]?.costingMeta || {};
+        const expenses = meta.expenses || {};
+        const chargeCurrencies = meta.chargeCurrencies || {};
+        const rate = Number(costingRows[0]?.exchangeRate || expenses.exchangeRate || (invoice as any)?.exchangeRate || 1);
+        const totals = landedCostTotals(expenses, chargeCurrencies, rate);
+        return {
+            meta,
+            expenses,
+            chargeCurrencies,
+            rate,
+            totals,
+            rows: costingRows
+        };
+    }, [costingRows, invoice]);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) setIsCopyToOpen(false);
@@ -172,9 +195,9 @@ const ViewPurchaseInvoiceView = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6]/50 flex flex-col font-sans">
+        <div className="min-h-screen bg-slate-100/50 flex flex-col font-sans">
             {/* Compact Action Toolbar */}
-            <div className="bg-[#f8fafc] border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
+            <div className="bg-slate-50 border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
                 <div className="flex items-center space-x-3">
                     <button
                         onClick={() => navigate('/purchase-invoices')}
@@ -204,19 +227,33 @@ const ViewPurchaseInvoiceView = () => {
                                     { label: 'Purchase Order', path: '/purchase-orders/new' },
                                     { label: 'Purchase Invoice', path: '/purchase-invoices/new' },
                                     { label: 'Goods Receipt', path: '/goods-receipts/new' },
-                                    { label: 'Debit Note', path: '/debit-notes/new' }
+                                    { label: 'Debit Note', path: '/debit-notes/new' },
+                                    { label: 'Landed Cost Calculator', path: `/purchase/costing-reports?invoiceId=${invoice.id}` }
                                 ].map(item => (
                                     <button
                                         key={item.label}
-                                        onClick={() => { setIsCopyToOpen(false); navigate(`${item.path}?copyFrom=${invoice.id}`); }}
+                                        onClick={() => {
+                                            setIsCopyToOpen(false);
+                                            if (item.path.includes('costing-reports')) navigate(item.path);
+                                            else navigate(`${item.path}?copyFrom=${invoice.id}`);
+                                        }}
                                         className="w-full text-left px-4 py-2 text-[12px] text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                                     >
-                                        New {item.label}
+                                        {item.path.includes('costing-reports') ? item.label : `New ${item.label}`}
                                     </button>
                                 ))}
                             </div>
                         )}
                     </div>
+
+                    <div className="w-[1px] h-6 bg-gray-200 mx-3"></div>
+
+                    <button
+                        onClick={() => navigate(`/purchase/costing-reports?invoiceId=${invoice.id}`)}
+                        className="bg-indigo-600 text-white border border-indigo-500 px-4 py-1.5 text-[12px] font-bold rounded shadow-sm hover:bg-indigo-700 flex items-center gap-2"
+                    >
+                        <Calculator size={14} /> Landed Cost
+                    </button>
 
                     <div className="w-[1px] h-6 bg-gray-200 mx-3"></div>
 
@@ -427,51 +464,13 @@ const ViewPurchaseInvoiceView = () => {
             </div>
 
             <div className="flex-1 p-6 flex justify-start overflow-visible print:p-0">
-                <div className="print-container bg-white shadow-xl p-12 w-[850px] max-w-full text-[13px] text-gray-800 relative" ref={pdfRef}>
-                    <style>{`
-                        @media print {
-                            @page { margin: 10mm; size: auto; }
-                            html, body, #root, #root > div, main { 
-                                background: white !important; 
-                                padding: 0 !important; 
-                                -webkit-print-color-adjust: exact !important; 
-                                print-color-adjust: exact !important;
-                                font-family: sans-serif !important; 
-                                height: auto !important; 
-                                min-height: none !important; 
-                                overflow: visible !important; 
-                                display: block !important; 
-                            }
-                            .no-print, nav, aside, header, .nav-bar, .side-bar, button, .breadcrumb-bar { display: none !important; }
-                            .print-container { 
-                                border: none !important; 
-                                box-shadow: none !important; 
-                                max-width: none !important; 
-                                width: 100% !important; 
-                                position: static !important;
-                                padding: 48px !important;
-                                background: white !important;
-                                margin: 0 !important;
-                            }
-                            .print-bg-slate-50 {
-                                background-color: #f8fafc !important;
-                                -webkit-print-color-adjust: exact !important;
-                                print-color-adjust: exact !important;
-                            }
-                        }
-                    `}</style>
+                <div className="flex flex-col gap-6 w-[850px] max-w-full">
+                <div className="print-container bg-white shadow-xl p-12 w-full text-[13px] text-gray-800 relative" ref={pdfRef}>
+                    <style>{DOCUMENT_PRINT_CSS}</style>
 
-                    <div className="flex justify-between items-start gap-12 mb-10 pb-10 border-b border-gray-100">
-                        <div className="flex-1">
-                            {/* Header Section */}
-                            <div className="mb-6">
-                                <div className="flex justify-between items-center mb-1">
-                                    <h1 className="text-xl font-bold text-slate-900 tracking-tight uppercase leading-none">{invoice.customTitle || 'Purchase Invoice'}</h1>
-                                </div>
-                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Reference: {invoice.reference}</p>
-                            </div>
+                    <DocumentPrintHeader title={invoice.customTitle || 'Purchase Invoice'} reference={invoice.reference} />
 
-                            <div className="grid grid-cols-2 gap-12 items-start">
+                    <div className="grid grid-cols-2 gap-12 items-start mb-10">
                                 {/* Vendor */}
                                 <div>
                                     <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-50 pb-2">Vendor / Supplier</h3>
@@ -500,13 +499,6 @@ const ViewPurchaseInvoiceView = () => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-
-                        {/* Company Logo */}
-                        <div className="w-[180px] shrink-0 pt-2">
-                            <img src="/logo.png" alt="Company Logo" className="w-full object-contain" />
-                        </div>
                     </div>
                     {invoice.description && (
                         <div className="mb-10 p-6 bg-slate-50 rounded-xl border border-slate-100 relative overflow-hidden group">
@@ -522,7 +514,7 @@ const ViewPurchaseInvoiceView = () => {
                     {/* Items Table */}
                     <div className="mb-14">
                         <table className="w-full text-left">
-                            <thead className="bg-[#f8fafc] border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
+                            <thead className="bg-slate-50 border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
                                 <tr>
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-12">#</th>
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Item</th>
@@ -577,11 +569,11 @@ const ViewPurchaseInvoiceView = () => {
                         {/* Summary Section */}
                         <div className="w-80 space-y-3">
                             <div className="flex justify-between items-center text-gray-500">
-                                <span className="text-[11px] font-bold uppercase tracking-widest">Subtotal</span>
+                                <span className="text-[11px] font-bold uppercase tracking-widest">{((invoice as any).docOptions || invoice.options)?.amountsAreTaxInclusive ? 'Net (excl. VAT)' : 'Subtotal'}</span>
                                 <span className="font-semibold">{totals.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between items-center text-gray-500">
-                                <span className="text-[11px] font-bold uppercase tracking-widest">Tax Component {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
+                                <span className="text-[11px] font-bold uppercase tracking-widest">{((invoice as any).docOptions || invoice.options)?.amountsAreTaxInclusive ? 'VAT' : 'Tax Component'} {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                 <span className="font-semibold">{totals.tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             {((invoice as any).discount > 0) && (
@@ -600,9 +592,91 @@ const ViewPurchaseInvoiceView = () => {
                         </div>
                     </div>
                 </div>
+
+                <div className="no-print bg-white shadow-xl p-8 w-full text-[13px] text-gray-800 border border-slate-100 rounded-2xl">
+                    <div className="flex items-start justify-between gap-4 mb-6">
+                        <div>
+                            <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                                <Calculator size={16} className="text-indigo-600" />
+                                Linked Landed Cost
+                            </h2>
+                            <p className="text-[11px] text-slate-400 font-medium mt-1">
+                                Charges convert to {BASE_CURRENCY} at the saved rate, then add duty and ZABS
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => navigate(`/purchase/costing-reports?invoiceId=${invoice.id}`)}
+                            className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-4 py-2 text-[11px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-100"
+                        >
+                            {costingSummary ? 'Open Calculator' : 'Create Costing'}
+                        </button>
+                    </div>
+
+                    {costingSummary ? (
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Exchange Rate</div>
+                                    <div className="text-lg font-black text-slate-900 mt-1">1 {(invoice.currency || 'USD').split(' ')[0]} = {costingSummary.rate} {BASE_CURRENCY}</div>
+                                </div>
+                                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">FOB ({BASE_CURRENCY})</div>
+                                    <div className="text-lg font-black text-slate-900 mt-1">{costingSummary.totals.fobBase.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                </div>
+                                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Expenses ({BASE_CURRENCY})</div>
+                                    <div className="text-lg font-black text-slate-900 mt-1">{costingSummary.totals.expensesBase.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                </div>
+                                <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-indigo-400">Grand Total ({BASE_CURRENCY})</div>
+                                    <div className="text-lg font-black text-indigo-900 mt-1">{costingSummary.totals.grandBase.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-[12px]">
+                                {Object.entries(costingSummary.expenses).filter(([key, value]) => key !== 'exchangeRate' && Number(value) > 0).map(([key, value]) => (
+                                    <div key={key} className="flex justify-between bg-white border border-slate-100 rounded-lg px-3 py-2">
+                                        <span className="font-bold text-slate-500 capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
+                                        <span className="font-black text-slate-800">
+                                            {String(costingSummary.chargeCurrencies[key] || BASE_CURRENCY)} {Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                                        <th className="py-2">Item</th>
+                                        <th className="py-2 text-right">Qty</th>
+                                        <th className="py-2 text-right">Purchase ({BASE_CURRENCY})</th>
+                                        <th className="py-2 text-right">Landed ({BASE_CURRENCY})</th>
+                                        <th className="py-2 text-right">Per Unit ({BASE_CURRENCY})</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {costingSummary.rows.map((row: any) => (
+                                        <tr key={row.id}>
+                                            <td className="py-2 font-semibold text-slate-800">{row.item?.itemName || row.item?.itemCode || 'Item'}</td>
+                                            <td className="py-2 text-right">{Number(row.receivedQty || 0)}</td>
+                                            <td className="py-2 text-right">{Number(row.purchaseCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                            <td className="py-2 text-right font-black">{Number(row.landedCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                            <td className="py-2 text-right">{Number(row.costPerUnit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-slate-500 font-medium">
+                            No costing is linked to this invoice yet. Open the calculator to convert foreign charges, add local duty/ZABS, and save the ZMW landed cost.
+                        </p>
+                    )}
+                </div>
+                </div>
             </div>
 
-            <div className="bg-[#f3f4f6] px-8 py-4 border-t border-gray-200 flex justify-end no-print">
+            <div className="bg-slate-100 px-8 py-4 border-t border-gray-200 flex justify-end no-print">
                 <div className="flex space-x-2">
                     <button onClick={() => window.print()} className="bg-white border border-gray-300 px-6 py-2 text-[11px] font-bold text-gray-700 rounded-md shadow-sm hover:bg-gray-50 transition uppercase tracking-widest flex items-center gap-2">
                         <Printer size={14} /> Print Document

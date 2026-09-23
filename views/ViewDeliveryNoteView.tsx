@@ -114,9 +114,9 @@ const ViewDeliveryNoteView = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6]/50 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
+        <div className="min-h-screen bg-slate-100/50 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
             {/* Compact Action Toolbar - Matching Sales Quote View */}
-            <div className="bg-[#f8fafc] border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
+            <div className="bg-slate-50 border-b border-gray-300 px-6 py-3 flex items-center justify-between sticky top-0 z-50 no-print">
                 <div className="flex items-center space-x-3">
                     <button 
                         onClick={() => navigate('/delivery-notes')}
@@ -428,7 +428,7 @@ const ViewDeliveryNoteView = () => {
                     {/* Items Table */}
                     <div className="mb-14 overflow-hidden">
                         <table className="w-full text-left">
-                            <thead className="bg-[#f8fafc] border-y border-gray-200 text-right print-bg-slate-50">
+                            <thead className="bg-slate-50 border-y border-gray-200 text-right print-bg-slate-50">
                                 <tr>
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-12">#</th>
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Item</th>

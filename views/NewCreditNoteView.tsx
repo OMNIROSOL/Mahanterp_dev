@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { SalesQuote } from '../types';
 import apiService from '../services/apiService';
+import { getDocumentDefaults } from '../utils/documentDefaults';
 import Card from '../components/shared/Card';
 import Button from '../components/shared/Button';
 import FormInput from '../components/shared/FormInput';
@@ -117,7 +118,7 @@ const NewCreditNoteView = () => {
         columnDescription: false,
         columnDiscount: false,
         columnDiscountType: 'Percentage',
-        amountsAreTaxInclusive: false,
+        amountsAreTaxInclusive: getDocumentDefaults().amountsAreTaxInclusive,
         withholdingTax: false,
         withholdingTaxType: 'Rate',
         withholdingTaxValue: '0',

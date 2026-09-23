@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { DEFAULT_TAX_CODE } from '../utils/tax';
+import { getDocumentDefaults, saveDocumentDefaults } from '../utils/documentDefaults';
 
 const InvoiceFormDefaultsView = () => {
     const navigate = useNavigate();
-    const [items, setItems] = useState([{ id: 1, account: '', qty: '', unitPrice: '', taxCode: 'No tax' }]);
+    const saved = getDocumentDefaults();
+    const [items, setItems] = useState([{ id: 1, account: '', qty: '', unitPrice: '', taxCode: saved.defaultTaxCode }]);
     const [dueDateType, setDueDateType] = useState('Net');
     const [showLineNumbers, setShowLineNumbers] = useState(true);
-    const [showDescription, setShowDescription] = useState(true);
-    const [showDiscount, setShowDiscount] = useState(true);
+    const [showDescription, setShowDescription] = useState(saved.columnDescription);
+    const [showDiscount, setShowDiscount] = useState(saved.columnDiscount);
     const [discountType, setDiscountType] = useState('Percentage');
-    const [isTaxInclusive, setIsTaxInclusive] = useState(false);
+    const [isTaxInclusive, setIsTaxInclusive] = useState(saved.amountsAreTaxInclusive);
     const [showRounding, setShowRounding] = useState(false);
     const [roundingType, setRoundingType] = useState('None');
     const [showWithholding, setShowWithholding] = useState(false);
@@ -39,7 +42,7 @@ const InvoiceFormDefaultsView = () => {
     });
 
     const addLine = () => {
-        setItems([...items, { id: Date.now(), account: '', qty: '', unitPrice: '', taxCode: 'No tax' }]);
+        setItems([...items, { id: Date.now(), account: '', qty: '', unitPrice: '', taxCode: DEFAULT_TAX_CODE }]);
     };
 
     const removeLine = (id: number) => {
@@ -49,9 +52,9 @@ const InvoiceFormDefaultsView = () => {
     };
 
     return (
-        <div className="invoice-screen-container bg-[#f3f4f6]">
+        <div className="invoice-screen-container bg-slate-100">
             <div className="bg-white px-4 py-2 border-b border-gray-200 flex items-center text-[11px] text-gray-500 space-x-1.5 select-none">
-                <i className="fas fa-folder-open text-[#90a4ae]"></i>
+                <i className="fas fa-folder-open text-slate-400"></i>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
                 <Link to="/invoices" className="hover:text-[#2196f3]">Sales Invoices</Link>
                 <i className="fas fa-caret-right text-[#cfd8dc] scale-75"></i>
@@ -60,8 +63,8 @@ const InvoiceFormDefaultsView = () => {
 
             <div className="p-8 max-w-[1200px]">
                 <div className="flex items-center space-x-2 mb-6">
-                    <h1 className="text-[18px] text-[#455a64]">Sales Invoice</h1>
-                    <i className="far fa-question-circle text-[#90a4ae] text-[14px]"></i>
+                    <h1 className="text-[18px] text-slate-600">Sales Invoice</h1>
+                    <i className="far fa-question-circle text-slate-400 text-[14px]"></i>
                 </div>
 
                 <div className="space-y-6 bg-white p-8 border border-gray-200 rounded-sm shadow-sm">
@@ -304,7 +307,7 @@ const InvoiceFormDefaultsView = () => {
                                         <select
                                             value={earlyPaymentType}
                                             onChange={(e) => setEarlyPaymentType(e.target.value)}
-                                            className="w-32 border border-blue-300 px-2 py-1 text-[11px] text-[#263238] rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white h-[28px] appearance-none pr-6"
+                                            className="w-32 border border-blue-300 px-2 py-1 text-[11px] text-slate-800 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white h-[28px] appearance-none pr-6"
                                         >
                                             <option value="Percentage">Percentage</option>
                                             <option value="Exact amount">Exact amount</option>
@@ -317,7 +320,7 @@ const InvoiceFormDefaultsView = () => {
                                             type="text"
                                             value={earlyPaymentValue}
                                             onChange={(e) => setEarlyPaymentValue(e.target.value)}
-                                            className="w-16 px-2 py-1 text-[11px] text-[#263238] focus:outline-none text-right"
+                                            className="w-16 px-2 py-1 text-[11px] text-slate-800 focus:outline-none text-right"
                                         />
                                         <div className="bg-gray-50 border-l border-gray-100 px-2 py-1 text-[11px] text-gray-400 h-full flex items-center">
                                             {earlyPaymentType === 'Percentage' ? '%' : 'ZMW'}
@@ -332,7 +335,7 @@ const InvoiceFormDefaultsView = () => {
                                             type="text"
                                             value={earlyPaymentDays}
                                             onChange={(e) => setEarlyPaymentDays(e.target.value)}
-                                            className="w-12 px-2 py-1 text-[11px] text-[#263238] focus:outline-none text-center"
+                                            className="w-12 px-2 py-1 text-[11px] text-slate-800 focus:outline-none text-center"
                                         />
                                         <div className="bg-gray-50 border-l border-gray-100 px-2 py-1 text-[11px] text-gray-400 h-full flex items-center">
                                             days
@@ -360,7 +363,7 @@ const InvoiceFormDefaultsView = () => {
                                         type="text"
                                         value={latePaymentFeePercentage}
                                         onChange={(e) => setLatePaymentFeePercentage(e.target.value)}
-                                        className="w-20 px-3 py-1 text-[11px] text-[#263238] focus:outline-none text-right"
+                                        className="w-20 px-3 py-1 text-[11px] text-slate-800 focus:outline-none text-right"
                                     />
                                     <div className="bg-gray-50 border-l border-gray-100 px-3 py-1 text-[11px] text-gray-400 h-full flex items-center">
                                         %
@@ -405,7 +408,7 @@ const InvoiceFormDefaultsView = () => {
                                         <div className="relative">
                                             <div
                                                 onClick={() => setShowLocationDropdown(!showLocationDropdown)}
-                                                className="min-w-[200px] border border-blue-300 px-3 py-1 text-[12px] text-[#263238] rounded-sm bg-white h-[28px] flex items-center justify-between cursor-pointer select-none"
+                                                className="min-w-[200px] border border-blue-300 px-3 py-1 text-[12px] text-slate-800 rounded-sm bg-white h-[28px] flex items-center justify-between cursor-pointer select-none"
                                             >
                                                 <span>{inventoryLocation}</span>
                                                 <i className={`fas fa-caret-down text-gray-400 transition-transform ${showLocationDropdown ? 'rotate-180' : ''}`}></i>
@@ -473,8 +476,21 @@ const InvoiceFormDefaultsView = () => {
                 </div>
 
                 <div className="mt-8 flex items-center space-x-4">
-                    <button className="bg-blue-600 text-white px-6 py-2 rounded text-[13px] font-bold hover:bg-blue-700 transition-colors shadow-md">Update</button>
-                    <span className="text-[12px] text-gray-400 italic">Administrator has disabled "Update" and "Delete" buttons</span>
+                    <button
+                        onClick={() => {
+                            saveDocumentDefaults({
+                                amountsAreTaxInclusive: isTaxInclusive,
+                                defaultTaxCode: items[0]?.taxCode || DEFAULT_TAX_CODE,
+                                columnDescription: showDescription,
+                                columnDiscount: showDiscount,
+                            });
+                            navigate('/sales-invoices');
+                        }}
+                        className="bg-blue-600 text-white px-6 py-2 rounded text-[13px] font-bold hover:bg-blue-700 transition-colors shadow-md"
+                    >
+                        Update
+                    </button>
+                    <span className="text-[12px] text-gray-400 italic">New sales invoices, quotes and orders use these tax defaults.</span>
                 </div>
             </div>
         </div>

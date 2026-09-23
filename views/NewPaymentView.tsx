@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import apiService from '../services/apiService';
 import { Account, InventoryItem, Payment as PaymentType } from '../types';
+import { CurrencyRateFields, BaseEquivalent } from '../components/shared/CurrencyRateFields';
+import DocumentAttachments from '../components/shared/DocumentAttachments';
+import { currencyCode } from '../utils/currency';
 import {
     Banknote as PaymentIcon, ChevronRight, Calculator, ChevronDown,
     Copy, X, Plus, Calendar, Hash, User, Briefcase,
     Landmark, CreditCard, Trash2, Save, Undo2,
-    CheckCircle2, Info, Image as ImageIcon, Download,
-    Upload, Settings,
+    CheckCircle2, Info, Settings,
     FileText
 } from 'lucide-react';
 import { SearchableSelect } from '../components/shared/SearchableSelect';
@@ -132,7 +134,6 @@ const NewPaymentView = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const dateInputRef = useRef<HTMLInputElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [isLoading, setIsLoading] = useState(true);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -150,11 +151,15 @@ const NewPaymentView = () => {
     const [description, setDescription] = useState('');
     const [saveError, setSaveError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [currency, setCurrency] = useState('ZMW');
+    const [exchangeRate, setExchangeRate] = useState(1);
+    const [rateManual, setRateManual] = useState(false);
+    const [currencies, setCurrencies] = useState<any[]>([]);
 
     const [items, setItems] = useState<PaymentLine[]>([{ id: Date.now(), role: 'settlement', item: '', account: 'Accounts Payable', description: '', qty: '1', discount: '', amount: '', total: '0' }]);
     const [settlementAccount, setSettlementAccount] = useState('Accounts Payable');
     const [advanceAccount, setAdvanceAccount] = useState('Supplier prepayments');
-    const [fileName, setFileName] = useState('No file chosen');
+    const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
     const [options, setOptions] = useState({
         taxInclusive: false,
@@ -185,16 +190,18 @@ const NewPaymentView = () => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const [accs, txItems, custs, supps] = await Promise.all([
+                const [accs, txItems, custs, supps, currs] = await Promise.all([
                     apiService.getAccounts(),
                     apiService.getTransactionItems(),
                     apiService.getCustomers(),
-                    apiService.getSuppliers()
+                    apiService.getSuppliers(),
+                    apiService.getCurrencies().catch(() => [])
                 ]);
                 setAccounts(accs);
                 setExpenseItems(txItems.filter((i: any) => i.type === 'Expense'));
                 setCustomers(custs);
                 setSuppliers(supps);
+                setCurrencies(currs || []);
 
                 const banks = paymentAccounts(accs);
                 const arName = apAccountName(accs);
@@ -214,15 +221,23 @@ const NewPaymentView = () => {
                             if (matchedSupplier) {
                                 setPaidToContact('Supplier');
                                 setPaidToSupplierId(matchedSupplier.id);
+                                setCurrency(currencyCode(payment.currency || matchedSupplier.currency));
                             } else if (matchedCustomer) {
                                 setPaidToContact('Customer');
+                                setCurrency(currencyCode(payment.currency || matchedCustomer.currency));
                             } else {
                                 setPaidToContact('Other');
+                                setCurrency(currencyCode(payment.currency));
                             }
                             setPaidToOptional(payment.paidToContact);
                         } else {
                             setPaidToContact('Supplier');
                             setPaidToOptional('');
+                        }
+                        const savedRate = Number(payment.exchangeRate);
+                        if (savedRate > 0) {
+                            setExchangeRate(savedRate);
+                            setRateManual(true);
                         }
                         setPaidFromAccount(payment.paidFromAccount || banks[0]?.name || '');
                         setDescription(payment.description || '');
@@ -277,6 +292,24 @@ const NewPaymentView = () => {
         };
         fetchData();
     }, [id]);
+
+    useEffect(() => {
+        const fetchRate = async () => {
+            try {
+                if (!currency || currency === 'ZMW') {
+                    setExchangeRate(1);
+                    return;
+                }
+                if (rateManual) return;
+                const rateData = await apiService.getExchangeRateAtDate(date, currency);
+                setExchangeRate(rateData.rate || 1);
+            } catch (e) {
+                console.error('Failed to load exchange rate:', e);
+                if (!rateManual) setExchangeRate(1);
+            }
+        };
+        fetchRate();
+    }, [currency, date, rateManual]);
 
     useEffect(() => {
         const loadCustomerInvoices = async () => {
@@ -464,9 +497,13 @@ const NewPaymentView = () => {
                 setPaidToOptional(supplierMatch.name);
                 setPaidToSupplierId(supplierMatch.id);
                 setPaidToContact('Supplier');
+                setCurrency(currencyCode(supplierMatch.currency));
+                setRateManual(false);
             } else if (customerMatch) {
                 setPaidToOptional(customerMatch.name);
                 setPaidToContact('Customer');
+                setCurrency(currencyCode(customerMatch.currency));
+                setRateManual(false);
             } else {
                 setPaidToOptional(customer);
                 setPaidToContact(queryParams.get('supplier') ? 'Supplier' : 'Customer');
@@ -514,11 +551,6 @@ const NewPaymentView = () => {
             supplierAdvance: Number(selectedSupplier?.advance || 0),
         };
     }, [items, options, withholdingTaxRate, withholdingTaxMethod, unpaidInvoices, allocations, suppliers, paidToSupplierId]);
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        setFileName(file ? file.name : 'No file chosen');
-    };
 
     const handleSave = async () => {
         setSaveError('');
@@ -614,7 +646,8 @@ const NewPaymentView = () => {
             paidFromAccount: paidFromAccount,
             description,
             amount: saveItems.reduce((sum, it) => sum + (it.total || 0), 0) || (parseFloat(fixedTotalValue) || 0),
-            currency: 'ZMW',
+            currency,
+            exchangeRate,
             status: options.cancelled ? 'Cancelled' : 'Completed',
             items: saveItems.map((it) => ({
                 ...it,
@@ -629,10 +662,17 @@ const NewPaymentView = () => {
 
         try {
             setIsSaving(true);
+            let savedId = id;
             if (id) {
                 await apiService.updatePayment(id, paymentData);
             } else {
-                await apiService.createPayment(paymentData);
+                const created = await apiService.createPayment(paymentData);
+                savedId = created?.id;
+            }
+            if (savedId && pendingFiles.length) {
+                for (const file of pendingFiles) {
+                    await apiService.uploadAttachment('payment', savedId, file);
+                }
             }
             navigate('/payments');
         } catch (err: any) {
@@ -714,6 +754,20 @@ const NewPaymentView = () => {
                             <InputField label="Overall Description" value={description} onChange={(e: any) => setDescription(e.target.value)} placeholder="What was this payment for?" Icon={Briefcase} />
                         </div>
 
+                        <CurrencyRateFields
+                            currency={currency}
+                            exchangeRate={exchangeRate}
+                            currencies={currencies}
+                            onCurrencyChange={(code) => {
+                                setCurrency(code);
+                                setRateManual(false);
+                            }}
+                            onRateChange={(rate) => {
+                                setExchangeRate(rate);
+                                setRateManual(true);
+                            }}
+                        />
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Paid To</label>
@@ -745,6 +799,8 @@ const NewPaymentView = () => {
                                                 const supplier = suppliers.find((s: any) => s.id === nextId);
                                                 setPaidToSupplierId(nextId);
                                                 setPaidToOptional(supplier?.name || '');
+                                                setCurrency(currencyCode(supplier?.currency));
+                                                setRateManual(false);
                                             }}
                                             className="flex-1 min-w-0 bg-transparent px-5 text-[13px] font-semibold text-slate-700 outline-none appearance-none"
                                         >
@@ -754,7 +810,13 @@ const NewPaymentView = () => {
                                     ) : paidToContact === 'Customer' ? (
                                         <select
                                             value={paidToOptional}
-                                            onChange={(e) => setPaidToOptional(e.target.value)}
+                                            onChange={(e) => {
+                                                const name = e.target.value;
+                                                const customer = customers.find((c: any) => c.name === name);
+                                                setPaidToOptional(name);
+                                                setCurrency(currencyCode(customer?.currency));
+                                                setRateManual(false);
+                                            }}
                                             className="flex-1 min-w-0 bg-transparent px-5 text-[13px] font-semibold text-slate-700 outline-none appearance-none"
                                         >
                                             <option value="">Select customer...</option>
@@ -820,15 +882,15 @@ const NewPaymentView = () => {
                                 <div className="flex flex-wrap items-center gap-2">
                                     <div className="px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-100">
                                         <p className="text-[9px] font-black uppercase tracking-widest text-indigo-400">Debit</p>
-                                        <p className="text-[13px] font-black text-indigo-700 tabular-nums">ZMW {formatMoney(calculations.supplierDebit)}</p>
+                                        <p className="text-[13px] font-black text-indigo-700 tabular-nums">{currency} {formatMoney(calculations.supplierDebit)}</p>
                                     </div>
                                     <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-100">
                                         <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">Advance</p>
-                                        <p className="text-[13px] font-black text-amber-700 tabular-nums">ZMW {formatMoney(calculations.supplierAdvance)}</p>
+                                        <p className="text-[13px] font-black text-amber-700 tabular-nums">{currency} {formatMoney(calculations.supplierAdvance)}</p>
                                     </div>
                                     <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
                                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Net</p>
-                                        <p className="text-[13px] font-black text-slate-800 tabular-nums">ZMW {formatMoney(calculations.supplierDebit - calculations.supplierAdvance)}</p>
+                                        <p className="text-[13px] font-black text-slate-800 tabular-nums">{currency} {formatMoney(calculations.supplierDebit - calculations.supplierAdvance)}</p>
                                     </div>
                                     {unpaidInvoices.length > 0 && (
                                         <>
@@ -912,8 +974,8 @@ const NewPaymentView = () => {
                                         </tbody>
                                     </table>
                                     <div className="flex justify-end gap-8 px-4 py-3 bg-slate-50 text-[12px] font-semibold text-slate-600">
-                                        <span>Applying ZMW {formatMoney(calculations.applied)}</span>
-                                        <span>Unallocated ZMW {formatMoney(calculations.unallocated)}</span>
+                                        <span>Applying {currency} {formatMoney(calculations.applied)}</span>
+                                        <span>Unallocated {currency} {formatMoney(calculations.unallocated)}</span>
                                     </div>
                                 </div>
                             )}
@@ -1072,7 +1134,7 @@ const NewPaymentView = () => {
                                             )}
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center justify-end gap-1">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase">ZMW</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase">{currency}</span>
                                                     <input
                                                         type="text"
                                                         inputMode="decimal"
@@ -1100,19 +1162,19 @@ const NewPaymentView = () => {
                             <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-slate-50/70 p-5 space-y-3">
                                 <div className="flex justify-between items-center text-[11px] font-bold text-slate-500">
                                     <span>Subtotal</span>
-                                    <span className="tabular-nums text-slate-800">ZMW {formatMoney(calculations.total)}</span>
+                                    <span className="tabular-nums text-slate-800">{currency} {formatMoney(calculations.total)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-[11px] font-bold text-indigo-600">
                                     <span>Debit settled</span>
-                                    <span className="tabular-nums">ZMW {formatMoney(calculations.applied)}</span>
+                                    <span className="tabular-nums">{currency} {formatMoney(calculations.applied)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-[11px] font-bold text-amber-600">
                                     <span>Advance money</span>
-                                    <span className="tabular-nums">ZMW {formatMoney(calculations.advanceAmt || calculations.unallocated)}</span>
+                                    <span className="tabular-nums">{currency} {formatMoney(calculations.advanceAmt || calculations.unallocated)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-[11px] font-bold text-slate-500">
                                     <span>Bills remaining</span>
-                                    <span className="tabular-nums text-slate-800">ZMW {formatMoney(calculations.remainingDebit)}</span>
+                                    <span className="tabular-nums text-slate-800">{currency} {formatMoney(calculations.remainingDebit)}</span>
                                 </div>
                                 {options.withholdingTax && (
                                     <div className="flex justify-between items-center text-[11px] font-bold text-rose-500">
@@ -1123,10 +1185,11 @@ const NewPaymentView = () => {
                                 <div className="flex items-center justify-between bg-indigo-600 px-5 py-4 rounded-2xl mt-2">
                                     <p className="text-[10px] font-black text-indigo-200 uppercase tracking-[0.25em]">Amount paid</p>
                                     <h2 className="text-xl font-black text-white tracking-tight tabular-nums">
-                                        <span className="text-[10px] font-black text-indigo-200 mr-2 uppercase tracking-widest">ZMW</span>
+                                        <span className="text-[10px] font-black text-indigo-200 mr-2 uppercase tracking-widest">{currency}</span>
                                         {formatMoney(calculations.finalTotal)}
                                     </h2>
                                 </div>
+                                <BaseEquivalent amount={calculations.finalTotal} currency={currency} exchangeRate={exchangeRate} />
                             </div>
                         </div>
                     </section>
@@ -1171,7 +1234,7 @@ const NewPaymentView = () => {
                                                 </SelectField>
                                                 <div className="flex-1">
                                                     <InputField
-                                                        label={withholdingTaxMethod === 'Rate' ? 'Rate (%)' : 'Fixed Amount (ZMW)'}
+                                                        label={withholdingTaxMethod === 'Rate' ? 'Rate (%)' : `Fixed Amount (${currency})`}
                                                         value={withholdingTaxRate}
                                                         onChange={(e: any) => setWithholdingTaxRate(e.target.value)}
                                                         placeholder="0.00"
@@ -1199,25 +1262,15 @@ const NewPaymentView = () => {
                         </AnimatePresence>
                     </section>
 
-                    {/* Attachment Section */}
                     <section className="space-y-8 pt-8 border-t border-slate-50">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500">
-                                <ImageIcon size={20} />
-                            </div>
-                            <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase">Attachment / Proof</h2>
-                        </div>
-                        <div className="max-w-[600px] p-8 border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50/30 flex items-center gap-6 hover:bg-slate-50 hover:border-indigo-300 transition-all cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
-                            <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center text-slate-300 group-hover:text-indigo-500 transition-colors">
-                                <Download size={24} />
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-[14px] font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">{fileName === 'No file chosen' ? 'Upload Payment Proof' : fileName}</p>
-                                <p className="text-[10px] font-medium text-slate-400">PDF, PNG or JPG max 10MB</p>
-                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,.pdf" />
-                            </div>
-                            <button className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-black text-slate-500 uppercase tracking-widest hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all shadow-sm">Select</button>
-                        </div>
+                        <DocumentAttachments
+                            documentType="payment"
+                            documentId={id}
+                            pendingFiles={pendingFiles}
+                            onPendingFilesChange={setPendingFiles}
+                            title="Attachment / Proof"
+                            hint="PDF, JPG, PNG or Excel — max 10MB"
+                        />
                     </section>
                 </div>
 

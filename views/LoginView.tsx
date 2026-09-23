@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, Loader2, Building2 } from 'lucide-react';
+import { Lock, Mail, Loader2, Building2, Moon, Sun } from 'lucide-react';
 
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { useTheme } from '../hooks/useTheme';
 
 const LoginView = () => {
   const [email, setEmail] = useState('');
@@ -10,6 +11,7 @@ const LoginView = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { isDark, toggle } = useTheme();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,13 +56,22 @@ const LoginView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative">
+      <button
+        type="button"
+        onClick={toggle}
+        className="absolute top-6 right-6 p-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {isDark ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
         <div className="p-8 pb-6 bg-blue-600 text-white text-center">
           <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm border border-white/20">
             <Building2 size={32} className="text-white" />
           </div>
-          <h1 className="text-2xl font-black tracking-tight mb-1">Mahant ERP</h1>
+          <h1 className="text-2xl font-black tracking-tight mb-1 text-white">Mahant ERP</h1>
           <p className="text-blue-100 text-sm font-medium">Sign in to your workspace</p>
         </div>
         

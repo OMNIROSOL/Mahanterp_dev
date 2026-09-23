@@ -7,6 +7,7 @@ import Button from '../components/shared/Button';
 import Badge from '../components/shared/Badge';
 import Card from '../components/shared/Card';
 import DataTable from '../components/shared/DataTable';
+import RowActions from '../components/shared/RowActions';
 import {
     Plus, Copy, FileText, Check, X, Eye, Edit, Printer, ChevronRight, ChevronLeft, Search, Share2,
     ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp, LayoutGrid, HelpCircle, ArrowUpDown
@@ -217,23 +218,7 @@ const SalesQuotesView = () => {
     };
 
     const filteredData = useMemo(() => {
-        let result = [...quotes].filter(q => {
-            // Filter out Expired quotes if status is Active
-            if (q.status === 'Active' && q.issueDate && q.expiryDays) {
-                try {
-                    const [d, m, y] = q.issueDate.split('.');
-                    if (d && m && y) {
-                        const expDate = new Date(`${y}-${m}-${d}`);
-                        expDate.setHours(23, 59, 59, 999);
-                        expDate.setDate(expDate.getDate() + parseInt(q.expiryDays));
-                        if (new Date() > expDate) return false;
-                    }
-                } catch (e) {
-                    console.error('Date parsing failed for quote:', q.reference, e);
-                }
-            }
-            return true;
-        });
+        let result = [...quotes];
         if (customerName) {
             result = result.filter(q => q.customer.toLowerCase() === customerName.toLowerCase());
         }
@@ -339,24 +324,11 @@ const SalesQuotesView = () => {
             id: 'Actions',
             header: 'Actions',
             accessor: (o: any) => (
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => navigate(`/sales-quotes/view/${o.id}`)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                        title="View Details"
-                    >
-                        <Eye size={14} />
-                    </button>
-                    {perms?.edit !== false && (
-                        <button
-                            onClick={() => navigate(`/sales-quotes/edit/${o.id}`)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all font-bold"
-                            title="Edit Quote"
-                        >
-                            <Edit size={14} />
-                        </button>
-                    )}
-                </div>
+                <RowActions
+                    viewPath={`/sales-quotes/view/${o.id}`}
+                    editPath={`/sales-quotes/edit/${o.id}`}
+                    showEdit={perms?.edit !== false}
+                />
             )
         },
         {
@@ -596,6 +568,7 @@ const SalesQuotesView = () => {
                         <option value="All">All Statuses</option>
                         <option value="Active">Active</option>
                         <option value="Pending Approval">Pending</option>
+                        <option value="Accepted">Accepted</option>
                         <option value="Inactive">Inactive</option>
                     </select>
                 </div>

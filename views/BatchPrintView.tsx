@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Printer, ChevronLeft } from 'lucide-react';
 import { Customer } from '../types';
 import apiService from '../services/apiService';
+import DocumentPrintHeader, { DOCUMENT_PRINT_CSS } from '../components/shared/DocumentPrintHeader';
 
 const BatchPrintView = () => {
     const location = useLocation();
@@ -361,53 +362,16 @@ const BatchPrintView = () => {
     return (
         <div className="bg-white min-h-screen p-0 sm:p-12 font-sans">
             <style>{`
+                ${DOCUMENT_PRINT_CSS}
                 @media print {
-                    @page { margin: 15mm; size: auto; }
-                    html, body, #root, #root > div, main { 
-                        background: white !important; 
-                        padding: 0 !important; 
-                        -webkit-print-color-adjust: exact; 
-                        font-family: sans-serif !important; 
-                        height: auto !important; 
-                        min-height: none !important; 
-                        overflow: visible !important; 
-                        display: block !important; 
-                    }
-                    .no-print, nav, aside, header, .nav-bar, .side-bar, button, .breadcrumb-bar { display: none !important; }
-                    .print-container { 
-                        border: none !important; 
-                        box-shadow: none !important; 
-                        max-width: none !important; 
-                        width: 100% !important; 
-                        position: static !important;
-                        padding: 24px !important;
-                        background: white !important;
-                    }
-                    .status-badge-print { 
-                        display: block !important; 
-                        -webkit-print-color-adjust: exact !important; 
-                        print-color-adjust: exact !important; 
-                    }
-                    .summary-box-print { 
-                        -webkit-print-color-adjust: exact !important; 
-                        print-color-adjust: exact !important; 
-                        background-color: #f8fafc !important; 
-                        border: none !important;
-                    }
-                    .summary-box-print * { 
-                        -webkit-print-color-adjust: exact !important; 
-                        print-color-adjust: exact !important; 
-                    }
+                    @page { size: A4; margin: 12mm; }
                     .print-break { page-break-after: always; }
-                    .document-page { 
-                        box-shadow: none !important; 
-                        border: none !important; 
-                        width: 100% !important; 
-                        max-width: none !important; 
-                        break-inside: avoid;
-                        height: auto !important;
-                        min-height: auto !important;
+                    .document-page { break-inside: avoid; }
+                    .status-badge-print, .summary-box-print, .summary-box-print * {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
+                    .summary-box-print { background-color: #f8fafc !important; border: none !important; }
                 }
             `}</style>
 
@@ -568,17 +532,8 @@ const BatchPrintView = () => {
 
                         return (
                             <div key={item.id} className={`document-page print-container bg-white shadow-xl p-12 w-[850px] max-w-full text-[13px] text-gray-800 relative mx-auto ${index < items.length - 1 ? 'print-break mb-12' : ''}`}>
-                                <div className="flex justify-between items-start gap-12 mb-10 pb-10 border-b border-gray-100">
-                                    <div className="flex-1">
-                                        {/* Header Section */}
-                                        <div className="mb-6">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <h1 className="text-xl font-bold text-slate-900 tracking-tight uppercase leading-none">{documentTitle}</h1>
-                                            </div>
-                                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">{isPurchaseQuote ? 'Ref' : 'Reference'}: {item.reference}</p>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-12 items-start">
+                                <DocumentPrintHeader title={documentTitle} reference={item.reference} />
+                                <div className="grid grid-cols-2 gap-12 items-start mb-10">
                                             {/* Billed To / Supplier */}
                                             <div>
                                                 <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-50 pb-2">{isDeliveryNote ? 'Delivered To' : ((isPurchaseQuote || isPurchaseOrder) ? 'Supplier' : 'Billed To')}</h3>
@@ -629,18 +584,11 @@ const BatchPrintView = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Company Logo */}
-                                    <div className="w-[180px] shrink-0 pt-2">
-                                        <img src="/logo.png" alt="Company Logo" className="w-full object-contain" />
-                                    </div>
                                 </div>
 
                                 <div className="mb-14">
                                     <table className="w-full text-left">
-                                        <thead className="bg-[#f8fafc] border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
+                                        <thead className="bg-slate-50 border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
                                             <tr>
                                                 <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-12">#</th>
                                                 <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Item</th>
@@ -813,11 +761,11 @@ const BatchPrintView = () => {
                                             return (
                                                 <>
                                                     <div className="flex justify-between items-center text-gray-500">
-                                                        <span className="text-[11px] font-bold uppercase tracking-widest">{item.options?.amountsAreTaxInclusive ? 'Subtotal (Excl. Tax)' : 'Subtotal'}</span>
+                                                        <span className="text-[11px] font-bold uppercase tracking-widest">{item.options?.amountsAreTaxInclusive ? 'Net (excl. VAT)' : 'Subtotal'}</span>
                                                         <span className="font-semibold">{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="flex justify-between items-center text-gray-500">
-                                                        <span className="text-[11px] font-bold uppercase tracking-widest text-indigo-400">Tax Component {totals.subtotal > 0 && totals.tax > 0 ? `(${((totals.tax / totals.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
+                                                        <span className="text-[11px] font-bold uppercase tracking-widest">{item.options?.amountsAreTaxInclusive ? 'VAT' : 'Tax Component'} {subtotal > 0 && tax > 0 ? `(${((tax / subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}</span>
                                                         <span className="font-semibold">{tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     {item.options?.withholdingTax && (

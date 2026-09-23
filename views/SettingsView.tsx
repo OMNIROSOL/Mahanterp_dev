@@ -16,14 +16,21 @@ import {
   Percent,
   Users,
   Clock,
-  ShieldCheck as Shield
+  ShieldCheck as Shield,
+  Upload,
+  Moon,
+  Sun,
+  Monitor
 } from 'lucide-react';
 import Card from '../components/shared/Card';
 import { AppUser } from '../types';
 import { useState, useEffect } from 'react';
+import { useTheme } from '../hooks/useTheme';
+import { ThemeMode } from '../utils/theme';
 
 const SettingsView = () => {
   const navigate = useNavigate();
+  const { mode, setTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<AppUser>({
     id: 'admin', name: 'Admin', role: 'Admin', avatar: 'A', email: 'admin@example.com'
   });
@@ -47,6 +54,15 @@ const SettingsView = () => {
           path: '/settings/divisions',
           color: 'text-indigo-600',
           bgColor: 'bg-indigo-50'
+        },
+        {
+          id: 'employees',
+          label: 'Employees',
+          description: 'Staff records for expense claims. Payroll is a separate module.',
+          icon: Users,
+          path: '/employees',
+          color: 'text-violet-600',
+          bgColor: 'bg-violet-50'
         },
         { 
           id: 'inventory-locations', 
@@ -126,6 +142,33 @@ const SettingsView = () => {
           color: 'text-sky-600',
           bgColor: 'bg-sky-50'
         },
+        {
+          id: 'company-profile',
+          label: 'Company Profile',
+          description: 'Name, address and TPIN printed on A4 documents',
+          icon: Building2,
+          path: '/settings/company',
+          color: 'text-slate-700',
+          bgColor: 'bg-slate-50'
+        },
+        {
+          id: 'approvals',
+          label: 'Approval Settings',
+          description: 'Control whether quotes and invoices need manager approval',
+          icon: ShieldCheck,
+          path: '/settings/approvals',
+          color: 'text-amber-600',
+          bgColor: 'bg-amber-50'
+        },
+        {
+          id: 'data-import',
+          label: 'Data Import',
+          description: 'Excel and CSV templates for masters, receipts and payments',
+          icon: Upload,
+          path: '/settings/data-import',
+          color: 'text-indigo-600',
+          bgColor: 'bg-indigo-50'
+        },
       ]
     },
     ...(isAdmin ? [{
@@ -177,6 +220,37 @@ const SettingsView = () => {
         </div>
         <h1 className="text-3xl font-black text-gray-900 tracking-tight">Settings</h1>
         <p className="text-gray-500 font-medium mt-1">Configure your ERP system to match your business workflows</p>
+      </div>
+
+      <div className="max-w-3xl">
+        <div className="space-y-6">
+          <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] px-2">Appearance</h3>
+          <div className="grid grid-cols-3 gap-3">
+            {([
+              { id: 'light' as ThemeMode, label: 'Light', icon: Sun },
+              { id: 'dark' as ThemeMode, label: 'Dark', icon: Moon },
+              { id: 'system' as ThemeMode, label: 'System', icon: Monitor },
+            ]).map((opt) => {
+              const selected = mode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setTheme(opt.id)}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${
+                    selected
+                      ? 'border-primary bg-indigo-50 text-indigo-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <opt.icon size={18} />
+                  <span className="text-[12px] font-black uppercase tracking-widest">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[12px] text-slate-400 px-1">System follows your computer’s light or dark setting.</p>
+        </div>
       </div>
 
       <div className="max-w-3xl">

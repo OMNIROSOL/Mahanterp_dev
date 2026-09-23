@@ -75,10 +75,10 @@ const DataTable = <T extends { id?: string | number }>({
   );
 
   return (
-    <div className={cn("bg-white rounded-xl border border-[#E5E7EB] shadow-[0_2px_8px_rgba(0,0,0,0.05)] flex flex-col h-full", className)}>
+    <div className={cn("bg-white rounded-xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.05)] flex flex-col h-full", className)}>
       {/* Table Header Area */}
       {(title || subtitle || onSearch || onFilter || onExport || actions) && (
-        <div className="px-6 py-4 border-b border-[#F3F4F6] bg-white flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+        <div className="px-6 py-4 border-b border-slate-100 bg-white flex flex-col xl:flex-row xl:items-center justify-between gap-6">
           <div>
             {title && (
               <h3 className="text-2xl font-medium text-slate-900 tracking-tight flex items-center gap-3">
@@ -94,12 +94,12 @@ const DataTable = <T extends { id?: string | number }>({
           <div className="flex flex-wrap items-center gap-3">
             {onSearch && (
               <div className="relative group flex-1 min-w-[240px]">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9CA3AF] group-focus-within:text-[#4F46E5] transition-colors" size={18} />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={18} />
                 <input
                   type="text"
                   placeholder="Search everything..."
                   onChange={(e) => onSearch?.(e.target.value)}
-                  className="w-full bg-[#F9FAFB] border border-[#D1D5DB] rounded-lg py-2 pl-11 pr-4 text-sm focus:ring-4 focus:ring-[#4F46E5]/5 focus:border-[#4F46E5] transition-all outline-none"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg py-2 pl-11 pr-4 text-sm focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all outline-none"
                 />
               </div>
             )}
@@ -141,7 +141,7 @@ const DataTable = <T extends { id?: string | number }>({
           <tbody className="divide-y divide-slate-100">
             {paginatedData.length > 0 ? (
               paginatedData.map((row, rowIdx) => (
-                <tr key={row.id || rowIdx} className="bg-white hover:bg-[#F7F9FC] transition-colors duration-150">
+                <tr key={row.id || rowIdx} className="bg-white hover:bg-slate-50 transition-colors duration-150">
                   {columns.map((column, colIdx) => (
                     <td key={colIdx} className={cn(
                       "px-6 py-4 text-[12px] font-semibold text-slate-500 transition-all border-b border-gray-100",
@@ -166,7 +166,7 @@ const DataTable = <T extends { id?: string | number }>({
             )}
           </tbody>
           {tableFooter && (
-            <tfoot className="bg-[#f8fafc]/80 border-t-2 border-slate-200">
+            <tfoot className="bg-slate-50/80 border-t-2 border-slate-200">
               {tableFooter}
             </tfoot>
           )}

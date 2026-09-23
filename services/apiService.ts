@@ -201,7 +201,7 @@ export const apiService = {
 
   // Reference Generation
   getLocations: () => api.get('/locations').then(res => res.data),
-  getNextReference: (type: 'invoice' | 'quote' | 'order' | 'delivery' | 'customer' | 'supplier' | 'purchase-quote' | 'purchase-enquiry' | 'purchase-order' | 'receipt' | 'payment' | 'purchase-invoice' | 'debit-note' | 'credit-note' | 'goods-received-note' | 'inventory-transfer' | 'inventory-write-off') =>
+  getNextReference: (type: 'invoice' | 'quote' | 'order' | 'delivery' | 'customer' | 'supplier' | 'purchase-quote' | 'purchase-enquiry' | 'purchase-order' | 'receipt' | 'payment' | 'purchase-invoice' | 'debit-note' | 'credit-note' | 'goods-received-note' | 'inventory-transfer' | 'inventory-write-off' | 'employee') =>
     api.get(`/reference/next/${type}`).then(res => res.data.nextRef),
 
   // Accounts
@@ -227,6 +227,7 @@ export const apiService = {
     { id: 'inter-account-transfers', name: 'Inter Account Transfers', category: 'Accounting & Finance' },
     { id: 'expense-claims', name: 'Expense Claims', category: 'Accounting & Finance' },
     { id: 'expense-claim-payers', name: 'Expense Claim Payers', category: 'Accounting & Finance' },
+    { id: 'employees', name: 'Employees', category: 'Settings & Master Data' },
 
     // Sales & CRM
     { id: 'customers', name: 'Customers Directory', category: 'Sales & CRM' },
@@ -340,8 +341,21 @@ export const apiService = {
   getPlanningData: (months?: number) => api.get(`/procurement/planning${months ? `?months=${months}` : ''}`).then(res => res.data),
   updateSupplierLeadTime: (id: string, data: any) => api.put(`/procurement/suppliers/${id}/lead-time`, data).then(res => res.data),
   saveOrderCostsAndPayments: (id: string, data: any) => api.post(`/procurement/purchase-orders/${id}/costs-and-payments`, data).then(res => res.data),
-  getProcurementCostingReport: () => api.get('/procurement/costing-report').then(res => res.data),
-  saveLandedCosts: (shipmentId: string, expenses: any, items: any[]) => api.post('/procurement/save-landed-costs', { shipmentId, expenses, items }).then(res => res.data),
+  getProcurementCostingReport: (params?: { invoiceId?: string; shipmentId?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.invoiceId) q.set('invoiceId', params.invoiceId);
+    if (params?.shipmentId) q.set('shipmentId', params.shipmentId);
+    const qs = q.toString();
+    return api.get(`/procurement/costing-report${qs ? `?${qs}` : ''}`).then(res => res.data);
+  },
+  saveLandedCosts: (payload: {
+    shipmentId?: string;
+    purchaseInvoiceId?: string;
+    expenses: any;
+    chargeCurrencies?: Record<string, string>;
+    logistics?: any;
+    items: any[];
+  }) => api.post('/procurement/save-landed-costs', payload).then(res => res.data),
   getHistoricalPrices: (itemId: string) => api.get(`/procurement/historical-prices/${itemId}`).then(res => res.data),
   getProcurementShipments: () => api.get('/procurement/shipments').then(res => res.data),
   getProcurementShipment: (id: string) => api.get(`/procurement/shipments/${id}`).then(res => res.data),
@@ -371,14 +385,23 @@ export const apiService = {
   getInterAccountTransfers: () => api.get('/inter-account-transfers').then(res => res.data),
   getInterAccountTransfer: (id: string) => api.get(`/inter-account-transfers/${id}`).then(res => res.data),
   createInterAccountTransfer: (data: any) => api.post('/inter-account-transfers', data).then(res => res.data),
+  updateInterAccountTransfer: (id: string, data: any) => api.put(`/inter-account-transfers/${id}`, data).then(res => res.data),
   deleteInterAccountTransfer: (id: string) => api.delete(`/inter-account-transfers/${id}`).then(res => res.data),
 
   // Expense Claims
   getExpenseClaimPayers: () => api.get('/expense-claim-payers').then(res => res.data),
   createExpenseClaimPayer: (data: any) => api.post('/expense-claim-payers', data).then(res => res.data),
+  updateExpenseClaimPayer: (id: string, data: any) => api.put(`/expense-claim-payers/${id}`, data).then(res => res.data),
   getExpenseClaims: () => api.get('/expense-claims').then(res => res.data),
   getExpenseClaim: (id: string) => api.get(`/expense-claims/${id}`).then(res => res.data),
   createExpenseClaim: (data: any) => api.post('/expense-claims', data).then(res => res.data),
+
+  // Employees
+  getEmployees: () => api.get('/employees').then(res => res.data),
+  getEmployee: (id: string) => api.get(`/employees/${id}`).then(res => res.data),
+  createEmployee: (data: any) => api.post('/employees', data).then(res => res.data),
+  updateEmployee: (id: string, data: any) => api.put(`/employees/${id}`, data).then(res => res.data),
+  makeEmployeePayer: (id: string) => api.post(`/employees/${id}/make-payer`, {}).then(res => res.data),
   
   // Transaction Items
   getTransactionItems: () => api.get('/transaction-items').then(res => res.data),
@@ -400,6 +423,61 @@ export const apiService = {
   updateExchangeRate: (id: string, data: any) => api.put(`/exchange-rates/${id}`, data).then(res => res.data),
   deleteExchangeRate: (id: string) => api.delete(`/exchange-rates/${id}`).then(res => res.data),
   getUnrealizedFxReport: () => api.get('/reports/unrealized-fx').then(res => res.data),
+
+  getAttachments: (documentType: string, documentId: string) =>
+    api.get('/attachments', { params: { documentType, documentId } }).then(res => res.data),
+  uploadAttachment: (documentType: string, documentId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentType', documentType);
+    formData.append('documentId', documentId);
+    return api.post('/attachments', formData, { timeout: 60000 }).then(res => res.data);
+  },
+  deleteAttachment: (id: string) => api.delete(`/attachments/${id}`).then(res => res.data),
+  downloadAttachment: async (id: string, fileName: string) => {
+    const res = await api.get(`/attachments/${id}`, { responseType: 'blob', timeout: 60000 });
+    const url = window.URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'attachment';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  getBankStatements: (accountName?: string) =>
+    api.get('/bank-statements', { params: accountName ? { accountName } : {} }).then(res => res.data),
+  getBankStatement: (id: string) => api.get(`/bank-statements/${id}`).then(res => res.data),
+  importBankStatement: (accountName: string, accountId: string | undefined, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('accountName', accountName);
+    if (accountId) formData.append('accountId', accountId);
+    return api.post('/bank-statements/import', formData, { timeout: 60000 }).then(res => res.data);
+  },
+  matchBankStatementLine: (id: string, data: any) => api.post(`/bank-statement-lines/${id}/match`, data).then(res => res.data),
+  createFromBankStatementLine: (id: string, data: any = {}) => api.post(`/bank-statement-lines/${id}/create`, data).then(res => res.data),
+  completeBankStatement: (id: string) => api.post(`/bank-statements/${id}/complete`, {}).then(res => res.data),
+
+  getImportTypes: () => api.get('/import/types').then(res => res.data),
+  downloadImportTemplate: async (type: string) => {
+    const res = await api.get(`/import/template/${type}`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type}-template.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  previewImport: (type: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/import/${type}`, formData, { timeout: 60000 }).then(res => res.data);
+  },
+  commitImport: (type: string, rows: any[]) => api.post(`/import/${type}/commit`, { rows }, { timeout: 60000 }).then(res => res.data),
 };
 
 export default apiService;

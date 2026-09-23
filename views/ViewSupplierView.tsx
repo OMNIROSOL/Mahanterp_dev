@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Eye, Edit, ChevronRight, LayoutGrid, Printer, FileText, Mail, Copy, ChevronLeft, ChevronsLeft, ChevronsRight, FolderOpen, Building2, ChevronDown } from 'lucide-react';
 import apiService from '../services/apiService';
 import { Supplier } from '../types';
+import { DualAmount } from '../components/shared/CurrencyRateFields';
 
 const ViewSupplierView = () => {
     const { id } = useParams();
@@ -94,7 +95,7 @@ const ViewSupplierView = () => {
     }
 
     return (
-        <div className="bg-[#f3f4f6] min-h-full flex flex-col">
+        <div className="bg-slate-100 min-h-full flex flex-col">
 
             <div className="bg-white px-8 py-3 border-b border-gray-200 flex items-center text-[11px] font-bold text-gray-400 uppercase tracking-widest space-x-2 select-none no-print">
                 <Building2 size={14} className="text-slate-400" />
@@ -104,7 +105,7 @@ const ViewSupplierView = () => {
                 <span className="text-slate-600">View Details</span>
             </div>
 
-            <div className="bg-[#f9fafb] px-4 py-3 border-b border-gray-200 flex items-center justify-between no-print">
+            <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between no-print">
                 <div className="flex items-center space-x-3">
                     <span className="text-[13px] text-gray-400 mr-2">Supplier Profile</span>
                     <div className="flex bg-white border border-gray-300 rounded shadow-sm overflow-visible relative">
@@ -250,22 +251,19 @@ const ViewSupplierView = () => {
                             <div>
                                 <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Debit money</span>
                                 <p className="font-black text-2xl text-indigo-700 tracking-tighter mt-2">
-                                    <span className="text-[14px] mr-2 text-slate-400">{(supplier.currency || 'ZMW').split(' ')[0]}</span>
-                                    {(Number(supplier.debit ?? supplier.accountsPayable) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    <DualAmount amount={Number(supplier.debit ?? supplier.accountsPayable) || 0} amountBase={supplier.debitBase} currency={supplier.currency} />
                                 </p>
                             </div>
                             <div>
                                 <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Advance money</span>
                                 <p className="font-black text-2xl text-amber-600 tracking-tighter mt-2">
-                                    <span className="text-[14px] mr-2 text-slate-400">{(supplier.currency || 'ZMW').split(' ')[0]}</span>
-                                    {(Number(supplier.advance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    <DualAmount amount={Number(supplier.advance) || 0} amountBase={supplier.advanceBase} currency={supplier.currency} />
                                 </p>
                             </div>
                             <div>
                                 <span className="text-slate-500 font-bold uppercase tracking-widest text-[12px]">Net outstanding</span>
                                 <p className="font-black text-2xl text-slate-900 tracking-tighter mt-2">
-                                    <span className="text-[14px] mr-2 text-slate-400">{(supplier.currency || 'ZMW').split(' ')[0]}</span>
-                                    {(Number(supplier.balance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    <DualAmount amount={Number(supplier.balance) || 0} amountBase={supplier.balanceBase} currency={supplier.currency} />
                                 </p>
                             </div>
                         </div>
@@ -273,7 +271,7 @@ const ViewSupplierView = () => {
                 </div>
             </div>
 
-            <div className="bg-[#f3f4f6] px-8 py-4 border-t border-gray-200 flex justify-end no-print">
+            <div className="bg-slate-100 px-8 py-4 border-t border-gray-200 flex justify-end no-print">
                 <div className="flex space-x-2">
                     <button onClick={() => navigate(`/suppliers/print-batch?ids=${supplier.id}`)} className="bg-white border border-gray-300 px-6 py-2 text-[11px] font-bold text-gray-700 rounded-md shadow-sm hover:bg-gray-50 transition uppercase tracking-widest flex items-center gap-2">
                         <Printer size={14} /> Print

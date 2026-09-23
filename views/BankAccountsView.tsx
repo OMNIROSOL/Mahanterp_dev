@@ -12,6 +12,33 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import apiService from '../services/apiService';
+import { currencyCode, isBaseCurrency, BASE_CURRENCY } from '../utils/currency';
+
+const bankBalanceDisplay = (a: any) => {
+    const code = currencyCode(a.currency);
+    const fc = isBaseCurrency(code) ? Number(a.balance || 0) : Number(a.foreignBalance ?? a.balance ?? 0);
+    const zmw = Number(a.balanceBase ?? a.balance ?? 0);
+    return { code, fc, zmw, showBase: !isBaseCurrency(code) };
+};
+
+const BankBalanceCell = ({ account }: { account: any }) => {
+    const { code, fc, zmw, showBase } = bankBalanceDisplay(account);
+    return (
+        <div className="text-right">
+            <div>
+                <span className="text-[10px] text-slate-400 font-bold mr-1">{code}</span>
+                <span className="font-black text-blue-600">
+                    {fc.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+            </div>
+            {showBase && (
+                <div className="text-[10px] font-bold text-slate-400">
+                    {BASE_CURRENCY} {zmw.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const BankAccountsView = () => {
     const navigate = useNavigate();
@@ -131,8 +158,8 @@ const BankAccountsView = () => {
 
     const totalPages = Math.ceil(bankAccounts.length / pageSize) || 1;
 
-    const totalClearedBalance = useMemo(() => bankAccounts.reduce((sum, a) => sum + a.balance, 0), [bankAccounts]);
-    const totalActualBalance = useMemo(() => bankAccounts.reduce((sum, a) => sum + a.balance, 0), [bankAccounts]);
+    const totalClearedBalance = useMemo(() => bankAccounts.reduce((sum, a) => sum + Number(a.balanceBase ?? a.balance ?? 0), 0), [bankAccounts]);
+    const totalActualBalance = useMemo(() => bankAccounts.reduce((sum, a) => sum + Number(a.balanceBase ?? a.balance ?? 0), 0), [bankAccounts]);
 
     const SortIcon = ({ column }: { column: string }) => {
         if (sortColumn !== column) return <ArrowUpDown size={12} className="ml-1 opacity-20 group-hover:opacity-50" />;
@@ -261,14 +288,7 @@ const BankAccountsView = () => {
             id: 'cleared_balance',
             header: <div className="flex items-center justify-end cursor-pointer group hover:text-blue-600 transition-colors" onClick={() => handleSort('cleared_balance')}>Cleared Balance <SortIcon column="cleared_balance" /></div>,
             className: 'text-right',
-            accessor: (a: any) => (
-                <div className="text-right">
-                    <span className="text-[10px] text-slate-400 font-bold mr-1">ZMW</span>
-                    <span className="font-black text-blue-600">
-                        {(a.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                </div>
-            )
+            accessor: (a: any) => <BankBalanceCell account={a} />
         },
         {
             id: 'pending_deposits',
@@ -286,14 +306,7 @@ const BankAccountsView = () => {
             id: 'actual_balance',
             header: <div className="flex items-center justify-end cursor-pointer group hover:text-blue-600 transition-colors" onClick={() => handleSort('actual_balance')}>Actual Balance <SortIcon column="actual_balance" /></div>,
             className: 'text-right',
-            accessor: (a: any) => (
-                <div className="text-right">
-                    <span className="text-[10px] text-slate-400 font-bold mr-1">ZMW</span>
-                    <span className="font-black text-blue-600">
-                        {(a.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                </div>
-            )
+            accessor: (a: any) => <BankBalanceCell account={a} />
         },
         {
             id: 'available_credit',
@@ -429,7 +442,7 @@ const BankAccountsView = () => {
                             </td>
                             {visibleColumns['cleared_balance'] && (
                                 <td className="px-6 py-6 text-right">
-                                    <span className="text-[10px] text-slate-400 font-bold mr-1 group-hover:text-blue-600 transition-colors">ZMW</span>
+                                    <span className="text-[10px] text-slate-400 font-bold mr-1 group-hover:text-blue-600 transition-colors">{BASE_CURRENCY}</span>
                                     <span className="text-[14px] text-blue-600 underline underline-offset-4 decoration-2 decoration-blue-100">
                                         {totalClearedBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>
@@ -439,7 +452,7 @@ const BankAccountsView = () => {
                             {visibleColumns['pending_withdrawals'] && <td className="px-6 py-6 text-right text-slate-400">—</td>}
                             {visibleColumns['actual_balance'] && (
                                 <td className="px-6 py-6 text-right">
-                                    <span className="text-[10px] text-slate-400 font-bold mr-1 group-hover:text-blue-600 transition-colors">ZMW</span>
+                                    <span className="text-[10px] text-slate-400 font-bold mr-1 group-hover:text-blue-600 transition-colors">{BASE_CURRENCY}</span>
                                     <span className="text-[14px] text-blue-600 underline underline-offset-4 decoration-2 decoration-blue-100">
                                         {totalActualBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>

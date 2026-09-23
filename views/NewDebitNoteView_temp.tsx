@@ -521,7 +521,7 @@ const NewCreditNoteView = () => {
                                                                             unit: invItem ? invItem.unit : ''
                                                                         } : i));
                                                                     }}
-                                                                    className="w-full bg-transparent border-none p-0 text-sm font-bold text-[#2563eb] outline-none appearance-none cursor-pointer"
+                                                                    className="w-full bg-transparent border-none p-0 text-sm font-bold text-blue-600 outline-none appearance-none cursor-pointer"
                                                                 >
                                                                     <option value="Select Item">Select Item...</option>
                                                                     {dbItems.map(it => (

@@ -41,6 +41,9 @@ import {
     Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { DEFAULT_TAX_CODE, taxRateForCode } from '../utils/tax';
+import { getDocumentDefaults } from '../utils/documentDefaults';
+import { getApprovalSettings } from '../utils/approvalSettings';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/shared/Tooltip";
 
@@ -153,9 +156,9 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
     const [footers, setFooters] = useState<any[]>([]);
     const [taxCodes, setTaxCodes] = useState<any[]>([]);
     const [unitCosts, setUnitCosts] = useState<InventoryUnitCost[]>([]);
-    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: '' }]);
+    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }]);
     const [options, setOptions] = useState({
-        amountsAreTaxInclusive: false,
+        amountsAreTaxInclusive: getDocumentDefaults().amountsAreTaxInclusive,
         rounding: false,
         roundingType: 'Round to nearest',
         columnLineNumber: true,
@@ -215,6 +218,8 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
     }, [unitCosts, marginThreshold, exchangeRate, decimalPlaces]);
 
     const requiresApproval = useMemo(() => {
+        const settings = getApprovalSettings();
+        if (!settings.enableStockApproval && !settings.enablePriceApproval) return false;
         return items.some(item => {
             if (item.item === 'Select Item') return false;
             const inv = dbInventory.find(i => i.itemName === item.item);
@@ -227,10 +232,11 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
             const sellingPrice = parseFloat(inv.sellingPrice) || 0;
             const minMarginPrice = getMinSellingPrice(item.itemId, item.division, sellingPrice);
 
-            // Disable if insufficient stock or low margin
-            return qty > stock || price < convertedPurchasePrice || price < minMarginPrice;
+            const stockFail = settings.enableStockApproval && qty > stock;
+            const priceFail = settings.enablePriceApproval && (price < convertedPurchasePrice || price < minMarginPrice);
+            return stockFail || priceFail;
         });
-    }, [items, dbInventory, getMinSellingPrice]);
+    }, [items, dbInventory, getMinSellingPrice, exchangeRate]);
 
     const fetchReference = async () => {
         try {
@@ -380,7 +386,7 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
                             unitPrice: i.unitPrice ? i.unitPrice.toString() : '0',
                             discount: i.discount ? i.discount.toString() : '',
                             division: i.division || 'General',
-                            taxCode: i.taxCode || ''
+                            taxCode: i.taxCode || DEFAULT_TAX_CODE
                         })));
 
                         if (order.customTitle || order.docOptions?.customTitleValue) {
@@ -409,7 +415,7 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
             setUseManualRef(false);
             setDescription('');
             setStatus('Ordered');
-            setItems([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '', discount: '', taxCode: '' }]);
+            setItems([{ id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '', discount: '', taxCode: DEFAULT_TAX_CODE }]);
         }
     }, [id, location.search]);
 
@@ -552,9 +558,8 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
                 else netTotal = Math.max(0, netTotal - discountValue);
             }
             let taxAmount = 0;
-            const selectedTax = taxCodes.find(tc => tc.name === item.taxCode);
-            if (selectedTax) {
-                const taxRate = parseFloat(selectedTax.rate) / 100;
+            const taxRate = taxRateForCode(taxCodes, item.taxCode) / 100;
+            if (taxRate > 0) {
                 if (options.amountsAreTaxInclusive) {
                     taxAmount = netTotal - (netTotal / (1 + taxRate));
                     netTotal = netTotal - taxAmount;
@@ -734,7 +739,7 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
                                     </div>
                                     <h2 className="text-lg font-black text-slate-800 tracking-tight">Order Line Items</h2>
                                 </div>
-                                <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: '' }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
+                                <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', itemId: '', description: '', division: 'General', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
                                     <Plus size={14} /> <span>Add Row</span>
                                 </button>
                             </div>
@@ -959,14 +964,14 @@ const NewSalesOrderView = ({ setApprovalRequests }: { setApprovalRequests?: Reac
                                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end pr-24">
                                     <div className="w-full max-w-sm space-y-2">
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Subtotal ({currency})</span>
+                                            <span>{options.amountsAreTaxInclusive ? 'Net (excl. VAT)' : `Subtotal (${currency})`}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">
                                                 <span className="text-[10px] font-black text-slate-400 mr-1 opacity-50">{currency}</span>
                                                 {calculations.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                         <div className="flex justify-end items-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] gap-8">
-                                            <span>Tax Component</span>
+                                            <span>{options.amountsAreTaxInclusive ? 'VAT 16%' : 'Tax Component'}</span>
                                             <span className="text-slate-700 font-bold tabular-nums text-[13px] w-32 text-right">{calculations.totalTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="flex justify-end items-center bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 mt-4 h-16 gap-x-6">

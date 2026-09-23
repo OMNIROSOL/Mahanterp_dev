@@ -432,7 +432,13 @@ router.post('/purchase-orders/:id/costs-and-payments', async (req, res) => {
 // 4. GET /api/procurement/costing-report
 router.get('/costing-report', async (req, res) => {
   try {
+    const invoiceId = req.query.invoiceId ? String(req.query.invoiceId) : '';
+    const shipmentId = req.query.shipmentId ? String(req.query.shipmentId) : '';
+    const where: any = {};
+    if (invoiceId) where.purchaseInvoiceId = invoiceId;
+    if (shipmentId) where.shipmentId = shipmentId;
     const costings = await prisma.procurementCosting.findMany({
+      where,
       include: {
         item: true
       },
@@ -690,12 +696,15 @@ router.put('/shipments/:id', async (req, res) => {
 
 // 8. POST /api/procurement/save-landed-costs
 router.post('/save-landed-costs', async (req, res) => {
-  const { shipmentId, expenses, items } = req.body;
+  const { shipmentId, purchaseInvoiceId, expenses, chargeCurrencies, logistics, items } = req.body;
   // items: array of { itemId, poLineId, receivedQty, purchaseCost, freightAllocation, customsAllocation, otherCharges, landedCost, costPerUnit }
   try {
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'No items provided' });
     }
+
+    const exchangeRate = Number(expenses?.exchangeRate) || 1;
+    const costingMeta = { expenses: expenses || {}, chargeCurrencies: chargeCurrencies || {}, logistics: logistics || {} };
 
     if (shipmentId && expenses) {
       const currentShipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
@@ -717,17 +726,29 @@ router.post('/save-landed-costs', async (req, res) => {
           zabs: Number(expenses.zabs) || 0,
           overweight: Number(expenses.overweight) || 0,
           bankCharges: Number(expenses.bankCharges) || 0,
-          exchangeRate: Number(expenses.exchangeRate) || 1,
+          exchangeRate,
+          purchaseInvoiceId: purchaseInvoiceId || undefined,
+          chargeCurrencies: chargeCurrencies || undefined,
         } as any
       });
     }
 
-    // Delete existing costings for these items, then re-insert
-    const itemIds = items.map((i: any) => i.itemId).filter(Boolean);
-    if (itemIds.length > 0) {
-      await prisma.procurementCosting.deleteMany({
-        where: { itemId: { in: itemIds } }
+    if (purchaseInvoiceId) {
+      await prisma.procurementCosting.deleteMany({ where: { purchaseInvoiceId } as any });
+    } else if (shipmentId) {
+      await prisma.procurementCosting.deleteMany({ where: { shipmentId } as any }).catch(async () => {
+        const itemIds = items.map((i: any) => i.itemId).filter(Boolean);
+        if (itemIds.length > 0) {
+          await prisma.procurementCosting.deleteMany({ where: { itemId: { in: itemIds } } });
+        }
       });
+    } else {
+      const itemIds = items.map((i: any) => i.itemId).filter(Boolean);
+      if (itemIds.length > 0) {
+        await prisma.procurementCosting.deleteMany({
+          where: { itemId: { in: itemIds } }
+        });
+      }
     }
 
     const created = await prisma.procurementCosting.createMany({
@@ -741,18 +762,19 @@ router.post('/save-landed-costs', async (req, res) => {
         otherCharges: Number(item.otherCharges) || 0,
         landedCost: Number(item.landedCost) || 0,
         costPerUnit: Number(item.costPerUnit) || 0,
+        purchaseInvoiceId: purchaseInvoiceId || null,
+        shipmentId: shipmentId || null,
+        exchangeRate,
+        costingMeta,
       }))
     });
 
-    // Update the purchasePrice and sellingPrice in the master Item table for all processed items
-    const exchangeRate = Number(expenses?.exchangeRate) || 1;
-
+    // Landed unit cost is already in ZMW. Do not apply the rate a second time.
     for (const item of items) {
       if (item.itemId && item.costPerUnit) {
         const dbItem = await prisma.item.findUnique({ where: { id: item.itemId } });
         let margin = (dbItem as any)?.marginPercentage ? Number((dbItem as any).marginPercentage) : 0;
         
-        // Fallback to category margin if item margin is 0
         if (margin === 0 && dbItem?.category) {
           const category = await prisma.itemCategory.findUnique({ where: { name: dbItem.category } });
           if ((category as any)?.marginPercentage) {
@@ -760,8 +782,7 @@ router.post('/save-landed-costs', async (req, res) => {
           }
         }
         
-        const cost = Number(item.costPerUnit);
-        const localCost = cost * exchangeRate;
+        const localCost = Number(item.costPerUnit);
         const sellingPrice = localCost * (1 + margin / 100);
 
         await prisma.item.update({
@@ -786,7 +807,7 @@ router.post('/save-landed-costs', async (req, res) => {
       }
     }
 
-    res.json({ success: true, count: created.count });
+    res.json({ success: true, count: created.count, purchaseInvoiceId: purchaseInvoiceId || null });
   } catch (err: any) {
     console.error('[SAVE LANDED COSTS ERROR]:', err);
     res.status(500).json({ error: err.message });

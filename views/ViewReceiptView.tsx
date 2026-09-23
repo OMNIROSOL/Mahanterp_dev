@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import apiService from '../services/apiService';
+import DocumentAttachments from '../components/shared/DocumentAttachments';
 import { Receipt as ReceiptType } from '../types';
 import {
     FolderOpen, ChevronRight, Edit, Printer, FileText, Mail,
@@ -82,7 +83,7 @@ const ViewReceiptView = () => {
     }
 
     return (
-        <div className="bg-[#f3f4f6] min-h-full flex flex-col font-sans">
+        <div className="bg-slate-100 min-h-full flex flex-col font-sans">
             {/* Breadcrumb */}
             <div className="bg-white px-6 py-2 border-b border-gray-200 flex items-center text-[11px] font-bold text-gray-500 uppercase tracking-widest space-x-1.5 select-none no-print shadow-sm">
                 <FolderOpen size={14} className="text-blue-500" />
@@ -243,8 +244,8 @@ const ViewReceiptView = () => {
             </div>
 
             {/* Document */}
-            <div className="flex-1 p-6 flex justify-center overflow-auto bg-[#f3f4f6]">
-                <div className="bg-white shadow-xl p-12 w-full max-w-[850px] min-h-[1100px] relative font-sans text-gray-900 border border-gray-200" ref={pdfRef}>
+            <div className="flex-1 p-6 flex justify-center overflow-auto bg-slate-100">
+                <div className="print-container bg-white shadow-xl p-12 w-full max-w-[850px] min-h-[1100px] relative font-sans text-gray-900 border border-gray-200" ref={pdfRef}>
                     <style>{`
                         @media print {
                             @page { margin: 10mm; size: auto; }
@@ -369,6 +370,9 @@ const ViewReceiptView = () => {
                         </div>
                     )}
                 </div>
+            </div>
+            <div className="no-print mt-8 bg-white rounded-[32px] border border-slate-100 shadow-sm p-8">
+                <DocumentAttachments documentType="receipt" documentId={id} readOnly />
             </div>
         </div>
     );

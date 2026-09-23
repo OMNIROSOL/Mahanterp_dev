@@ -250,7 +250,7 @@ const SalesDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="p-8 bg-[#f8fafc] min-h-screen text-slate-800 font-sans animate-in fade-in duration-700">
+    <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans animate-in fade-in duration-700">
       
       {/* Page Title & Corporate Branding */}
       <div className="mb-8 flex justify-between items-end">
@@ -270,7 +270,7 @@ const SalesDashboard: React.FC = () => {
 
       {/* Corporate Filter Bar */}
       <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-  <div className="flex bg-[#f1f5f9] p-1.5 rounded-xl border border-slate-50">
+  <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-50">
     {['Daily', 'Weekly', 'Monthly', 'Yearly'].map(t => (
       <button
         key={t}
