@@ -161,6 +161,15 @@ const SettingsView = () => {
           bgColor: 'bg-amber-50'
         },
         {
+          id: 'payslip-items',
+          label: 'Payslip Items',
+          description: 'Earnings, deductions and employer contributions for payslips',
+          icon: FileText,
+          path: '/settings/payslip-items',
+          color: 'text-emerald-600',
+          bgColor: 'bg-emerald-50'
+        },
+        {
           id: 'data-import',
           label: 'Data Import',
           description: 'Excel and CSV templates for masters, receipts and payments',

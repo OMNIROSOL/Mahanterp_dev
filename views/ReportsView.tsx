@@ -109,6 +109,20 @@ const ReportsView: React.FC = () => {
       ]
     },
     {
+      title: "Mahant Operations",
+      icon: BarChart3,
+      reports: [
+        { title: "Non-Moving Stock", description: "Parts with no sales in the selected period, valued at average cost.", icon: Package, path: "/reports/ops/non-moving-stock", color: "text-slate-600" },
+        { title: "Dead Stock", description: "Stock with no sale for more than 365 days, with an aging bucket and a saved decision.", icon: Package, path: "/reports/ops/dead-stock", color: "text-rose-600" },
+        { title: "Top 300 Parts", description: "Best sellers by value or quantity, with months of cover.", icon: TrendingUp, path: "/reports/ops/top-parts", color: "text-indigo-600" },
+        { title: "Low-Margin Items", description: "Items sold below the margin threshold, grouped by supplier. Management only.", icon: LineChart, path: "/reports/ops/low-margin", color: "text-amber-600" },
+        { title: "Branch Day Book", description: "One-day list of sales, receipts, payments, purchases, transfers, adjustments, and expenses.", icon: ClipboardList, path: "/reports/ops/branch-day-book", color: "text-blue-600" },
+        { title: "Item Costing", description: "Landed cost per receipt and the monthly average, from saved purchase costing.", icon: FileSpreadsheet, path: "/reports/ops/item-costing", color: "text-emerald-600" },
+        { title: "What to Order", description: "Suggested order quantity by supplier, with a draft purchase order.", icon: ShoppingCart, path: "/reports/ops/what-to-order", color: "text-indigo-600" },
+        { title: "Loss of Sales on Quotations", description: "Quoted lines the customer did not order within 30 days.", icon: History, path: "/reports/ops/loss-of-sales", color: "text-rose-600" },
+      ]
+    },
+    {
       title: "Inventory Reports",
       icon: Package,
       reports: [

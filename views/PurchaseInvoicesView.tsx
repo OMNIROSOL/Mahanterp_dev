@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { Plus, Eye, Edit, FileText, Check, X, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Printer, Search, ArrowUpDown, ChevronUp, ChevronDown, Copy, Calendar, Clock, Package, FileCheck } from 'lucide-react';
+import { Plus, Eye, Edit, FileText, Check, X, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Printer, Search, ArrowUpDown, ChevronUp, ChevronDown, Copy, Calendar, Clock, Package, FileCheck, Calculator } from 'lucide-react';
 import { cn } from '../utils/cn';
 import apiService from '../services/apiService';
 import { ScreenPermission } from '../types';
@@ -197,10 +197,20 @@ const PurchaseInvoicesView = () => {
             id: 'Actions',
             header: 'Actions',
             accessor: (inv: any) => (
-                <RowActions
-                    viewPath={`/purchase-invoices/view/${inv.id}`}
-                    editPath={`/purchase-invoices/edit/${inv.id}`}
-                />
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <RowActions
+                        viewPath={`/purchase-invoices/view/${inv.id}`}
+                        editPath={`/purchase-invoices/edit/${inv.id}`}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => navigate(`/purchase/costing-reports?invoiceId=${inv.id}`)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-100"
+                        title="Landed cost"
+                    >
+                        <Calculator size={13} /> Cost
+                    </button>
+                </div>
             )
         },
         {
@@ -222,6 +232,9 @@ const PurchaseInvoicesView = () => {
                         <FileCheck size={14} />
                     </div>
                     <span className="font-bold text-slate-900 whitespace-nowrap">{inv.reference}</span>
+                    {inv.hasLandedCost && (
+                        <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">Costed</span>
+                    )}
                 </div>
             )
         },

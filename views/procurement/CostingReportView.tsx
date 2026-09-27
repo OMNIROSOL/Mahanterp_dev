@@ -105,7 +105,7 @@ const InputField = ({
 );
 
 const ChargeField = ({
-  label, icon: Icon, value, currency, onAmount, onCurrency, currencies,
+  label, icon: Icon, value, currency, onAmount, onCurrency, currencies, rate,
 }: {
   label: string;
   icon?: any;
@@ -114,33 +114,45 @@ const ChargeField = ({
   onAmount: (v: string) => void;
   onCurrency: (code: string) => void;
   currencies: { code: string }[];
-}) => (
-  <div className="space-y-1.5">
-    <label className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-1.5">
-      {Icon && <Icon size={10} />}
-      {label}
-    </label>
-    <div className="flex gap-2">
-      <input
-        type="number"
-        step="0.01"
-        value={value}
-        onChange={(e) => onAmount(e.target.value)}
-        placeholder="0.00"
-        className="flex-1 min-w-0 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-white"
-      />
-      <select
-        value={currencyCode(currency)}
-        onChange={(e) => onCurrency(e.target.value)}
-        className="w-[88px] shrink-0 px-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-      >
-        {(currencies.length ? currencies : [{ code: 'ZMW' }, { code: 'USD' }]).map((c) => (
-          <option key={c.code} value={c.code}>{c.code}</option>
-        ))}
-      </select>
+  rate?: number;
+}) => {
+  const code = currencyCode(currency);
+  const fx = Number(rate) > 0 ? Number(rate) : 1;
+  const amount = Number(value) || 0;
+  const converted = code !== BASE_CURRENCY && amount ? chargeToBase(amount, code, fx) : null;
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-1.5">
+        {Icon && <Icon size={10} />}
+        {label}
+      </label>
+      <div className="flex gap-2">
+        <input
+          type="number"
+          step="0.01"
+          value={value}
+          onChange={(e) => onAmount(e.target.value)}
+          placeholder="0.00"
+          className="flex-1 min-w-0 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-white"
+        />
+        <select
+          value={code}
+          onChange={(e) => onCurrency(e.target.value)}
+          className="w-[88px] shrink-0 px-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+        >
+          {(currencies.length ? currencies : [{ code: 'ZMW' }, { code: 'USD' }]).map((c) => (
+            <option key={c.code} value={c.code}>{c.code}</option>
+          ))}
+        </select>
+      </div>
+      {converted != null && (
+        <p className="text-[10px] font-bold text-indigo-500">
+          {BASE_CURRENCY} {fmt(converted)} <span className="text-slate-400 font-medium">({code} {fmt(amount)} × {fx})</span>
+        </p>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -176,6 +188,7 @@ const CostingReportView = () => {
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [invoiceDropdownOpen, setInvoiceDropdownOpen] = useState(false);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [invoiceLoadError, setInvoiceLoadError] = useState('');
 
   const [shipments, setShipments] = useState<any[]>([]);
   const [selectedShipmentId, setSelectedShipmentId] = useState('');
@@ -197,26 +210,28 @@ const CostingReportView = () => {
     const load = async () => {
       setLoadingShipments(true);
       setLoadingInvoices(true);
-      try {
-        const [shipData, invData, rates, currs] = await Promise.all([
-          apiService.getProcurementShipments(),
-          apiService.getPurchaseInvoices(),
-          apiService.getExchangeRates().catch(() => []),
-          apiService.getCurrencies().catch(() => []),
-        ]);
-        setShipments((shipData || []).filter((s: any) => s.status !== 'Completed'));
-        setPurchaseInvoices(invData || []);
-        setCurrencies(currs || []);
-        if (rates && rates.length > 0) {
-          setSystemExchangeRate(Number(rates[0].rate) || 1);
-          setSystemCurrency(rates[0].currencyCode || 'USD');
-        }
-      } catch (err) {
-        console.error('Failed to load initial data:', err);
-      } finally {
-        setLoadingShipments(false);
-        setLoadingInvoices(false);
+      setInvoiceLoadError('');
+      const [shipData, invData, rates, currs] = await Promise.all([
+        apiService.getProcurementShipments().catch(() => []),
+        apiService.getPurchaseInvoices().catch((err: any) => {
+          setInvoiceLoadError(err?.response?.data?.error || err?.message || 'Could not load purchase invoices.');
+          return [];
+        }),
+        apiService.getExchangeRates().catch(() => []),
+        apiService.getCurrencies().catch(() => []),
+      ]);
+      setShipments((Array.isArray(shipData) ? shipData : []).filter((s: any) => s.status !== 'Completed'));
+      setPurchaseInvoices(Array.isArray(invData) ? invData : []);
+      setCurrencies(Array.isArray(currs) ? currs : []);
+      if (rates && rates.length > 0) {
+        const usd = rates.find((r: any) => currencyCode(r.currencyCode || r.currency) === 'USD') || rates[0];
+        const rate = Number(usd.rate) || 1;
+        setSystemExchangeRate(rate);
+        setSystemCurrency(currencyCode(usd.currencyCode || usd.currency) || 'USD');
+        setExpenses((prev) => (prev.exchangeRate === 1 && rate > 1 ? { ...prev, exchangeRate: rate } : prev));
       }
+      setLoadingShipments(false);
+      setLoadingInvoices(false);
     };
     load();
   }, []);
@@ -491,8 +506,8 @@ const CostingReportView = () => {
   // ─── Save Landed Costs ─────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
-    if (allocatedItems.length === 0 || (!selectedInvoice && !selectedShipment)) {
-      alert('Select a purchase invoice (or shipment) and ensure items are allocated before saving.');
+    if (!selectedInvoice?.id) {
+      alert('Select a purchase invoice before saving landed cost.');
       return;
     }
     setSaving(true);
@@ -502,7 +517,7 @@ const CostingReportView = () => {
       const items = allocatedItems.map((item: any) => {
         const share = (item.lineFobBase || 0) / fobBaseTotal;
         return {
-          itemId: item.itemId || '',
+          itemId: item.itemId || null,
           poLineId: item.id,
           receivedQty: item.qty,
           purchaseCost: item.lineFobBase,
@@ -512,11 +527,11 @@ const CostingReportView = () => {
           landedCost: item.landedTotal,
           costPerUnit: item.landedPerUnit
         };
-      }).filter((i: any) => i.itemId);
+      });
 
       await apiService.saveLandedCosts({
         shipmentId: selectedShipment?.id,
-        purchaseInvoiceId: selectedInvoice?.id || selectedShipment?.purchaseInvoiceId,
+        purchaseInvoiceId: selectedInvoice.id,
         expenses,
         chargeCurrencies,
         logistics,
@@ -524,9 +539,9 @@ const CostingReportView = () => {
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save landed costs:', err);
-      alert('Failed to save landed costs. Please try again.');
+      alert(err?.response?.data?.error || err?.message || 'Failed to save landed costs. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -679,7 +694,7 @@ const CostingReportView = () => {
             </button>
             <button
             onClick={handleSave}
-            disabled={allocatedItems.length === 0 || saving || (selectedShipment?.status?.includes('(Costed)') && !isAdmin)}
+            disabled={!selectedInvoiceId || saving || (selectedShipment?.status?.includes('(Costed)') && !isAdmin)}
             className={`px-6 py-2.5 text-[11px] font-black text-white rounded-xl transition-all uppercase tracking-widest flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg ${
               saveSuccess
                 ? 'bg-emerald-500 shadow-emerald-200 border border-emerald-400'
@@ -741,6 +756,8 @@ const CostingReportView = () => {
                 <div className="max-h-56 overflow-y-auto">
                   {loadingInvoices ? (
                     <div className="p-4 text-center text-xs text-slate-400 font-bold">Loading...</div>
+                  ) : invoiceLoadError ? (
+                    <div className="p-4 text-center text-xs text-rose-500 font-bold">{invoiceLoadError}</div>
                   ) : filteredInvoices.length === 0 ? (
                     <div className="p-4 text-center text-xs text-slate-400 font-bold">No purchase invoices found</div>
                   ) : (

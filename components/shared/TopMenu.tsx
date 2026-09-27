@@ -144,6 +144,7 @@ const TopMenu: React.FC = () => {
         { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers', icon: ArrowLeftRight, countKey: 'transfers' },
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims', icon: Wallet, countKey: 'expenseClaims' },
         { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers', icon: Users },
+        { label: 'Payslips', path: '/payslips', id: 'payslips', icon: FileSpreadsheet },
       ]
     },
     {

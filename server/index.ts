@@ -32,6 +32,8 @@ import {
 } from './ledger';
 import { currencyCode, ensureMultiCurrencyColumns, resolveRateAtDate } from './currency';
 import { employeePayload, ensureHrTables } from './hr';
+import { ensurePayrollTables, registerPayrollRoutes } from './payroll';
+import { registerMilReportRoutes } from './milReports';
 import { ensurePhase5Tables, registerPhase5Routes } from './phase5';
 
 const app = express();
@@ -4154,6 +4156,11 @@ app.get('/api/purchase-invoices', async (req, res) => {
     for (const a of allocs) {
       paidMap[a.invoiceId] = Number(a.amount || 0);
     }
+    const costingRows = await prisma.procurementCosting.findMany({
+      where: { purchaseInvoiceId: { not: null } },
+      select: { purchaseInvoiceId: true },
+    }).catch(() => []);
+    const costedIds = new Set((costingRows || []).map((row: any) => row.purchaseInvoiceId).filter(Boolean));
     const mapped = invs.map(inv => {
       const itemsTotal = (inv.items || []).reduce((sum, item) => {
         const itemTotal = Number(item.totalAmount) || 0;
@@ -4180,7 +4187,8 @@ app.get('/api/purchase-invoices', async (req, res) => {
         supplierId: inv.supplier_id,
         currency: inv.currency || (inv.docOptions as any)?.currency || (inv.suppliers as any)?.currency?.split(' - ')[0] || 'ZMW',
         exchangeRate: Number((inv as any).exchangeRate || (inv.docOptions as any)?.exchangeRate || 1),
-        discount: totalDiscount
+        discount: totalDiscount,
+        hasLandedCost: costedIds.has(inv.id)
       };
     });
     res.json(mapped);
@@ -5106,7 +5114,7 @@ app.delete('/api/inter-account-transfers/:id', async (req, res) => {
   }
 });
 
-// Employees (Q-02 master; payroll is out of scope)
+// Employees (person master used by expense claims and payslips)
 app.get('/api/employees', async (_req, res) => {
   try {
     await ensureHrTables(prisma);
@@ -5593,6 +5601,8 @@ app.get('/api/reports/unrealized-fx', async (_req, res) => {
 });
 
 registerPhase5Routes(app, prisma);
+registerPayrollRoutes(app, prisma);
+registerMilReportRoutes(app, prisma);
 
 app.use((req: any, res: any) => {
   console.log(`[404] ${req.method} ${req.url}`);
@@ -5608,6 +5618,7 @@ if (require.main === module) {
     ensureAllocationTables(prisma)
       .then(() => ensureMultiCurrencyColumns(prisma))
       .then(() => ensureHrTables(prisma))
+      .then(() => ensurePayrollTables(prisma))
       .then(() => ensurePhase5Tables(prisma))
       .then(() => backfillUnpostedDocuments(prisma))
       .then((result) => console.log('[ledger] backfill complete', JSON.stringify(result)))

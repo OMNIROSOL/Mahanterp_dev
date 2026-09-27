@@ -227,6 +227,7 @@ export const apiService = {
     { id: 'inter-account-transfers', name: 'Inter Account Transfers', category: 'Accounting & Finance' },
     { id: 'expense-claims', name: 'Expense Claims', category: 'Accounting & Finance' },
     { id: 'expense-claim-payers', name: 'Expense Claim Payers', category: 'Accounting & Finance' },
+    { id: 'payslips', name: 'Payslips', category: 'Accounting & Finance' },
     { id: 'employees', name: 'Employees', category: 'Settings & Master Data' },
 
     // Sales & CRM
@@ -396,6 +397,15 @@ export const apiService = {
   getExpenseClaim: (id: string) => api.get(`/expense-claims/${id}`).then(res => res.data),
   createExpenseClaim: (data: any) => api.post('/expense-claims', data).then(res => res.data),
 
+  getPayslipItems: () => api.get('/payslip-items').then(res => res.data),
+  createPayslipItem: (data: any) => api.post('/payslip-items', data).then(res => res.data),
+  updatePayslipItem: (id: string, data: any) => api.put(`/payslip-items/${id}`, data).then(res => res.data),
+  getPayslips: () => api.get('/payslips').then(res => res.data),
+  getPayslip: (id: string) => api.get(`/payslips/${id}`).then(res => res.data),
+  createPayslip: (data: any) => api.post('/payslips', data).then(res => res.data),
+  updatePayslip: (id: string, data: any) => api.put(`/payslips/${id}`, data).then(res => res.data),
+  deletePayslip: (id: string) => api.delete(`/payslips/${id}`).then(res => res.data),
+
   // Employees
   getEmployees: () => api.get('/employees').then(res => res.data),
   getEmployee: (id: string) => api.get(`/employees/${id}`).then(res => res.data),
@@ -423,6 +433,27 @@ export const apiService = {
   updateExchangeRate: (id: string, data: any) => api.put(`/exchange-rates/${id}`, data).then(res => res.data),
   deleteExchangeRate: (id: string) => api.delete(`/exchange-rates/${id}`).then(res => res.data),
   getUnrealizedFxReport: () => api.get('/reports/unrealized-fx').then(res => res.data),
+
+  getMilReport: (name: string, params: any) => api.get(`/mil-reports/${name}`, {
+    params,
+    headers: { 'X-User-Role': apiService.getCurrentUser()?.role || '' },
+  }).then(res => res.data),
+  getMilBranches: () => api.get('/mil-reports/branches').then(res => res.data),
+  saveMilNote: (data: any) => api.put('/mil-reports/notes', data).then(res => res.data),
+  createMilDraftOrder: (data: any) => api.post('/mil-reports/what-to-order/draft', data).then(res => res.data),
+  downloadMilReport: async (name: string, params: any) => {
+    const res = await api.get(`/mil-reports/${name}`, {
+      params: { ...params, format: 'xlsx' },
+      responseType: 'blob',
+      headers: { 'X-User-Role': apiService.getCurrentUser()?.role || '' },
+    });
+    const url = window.URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.xlsx`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  },
 
   getAttachments: (documentType: string, documentId: string) =>
     api.get('/attachments', { params: { documentType, documentId } }).then(res => res.data),

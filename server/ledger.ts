@@ -95,7 +95,7 @@ export type JournalLine = {
   exchangeRate?: number;
 };
 
-export type ControlKey = 'AR' | 'AP' | 'SALES' | 'INVENTORY' | 'SUSPENSE' | 'EXPENSE_CLAIMS' | 'CUSTOMER_ADVANCES' | 'SUPPLIER_PREPAYMENTS' | 'FX';
+export type ControlKey = 'AR' | 'AP' | 'SALES' | 'INVENTORY' | 'SUSPENSE' | 'EXPENSE_CLAIMS' | 'CUSTOMER_ADVANCES' | 'SUPPLIER_PREPAYMENTS' | 'FX' | 'EMPLOYEE_CLEARING';
 
 const CONTROL: Record<ControlKey, { names: string[]; code: string; type: string; payment?: boolean }> = {
   AR: { names: ['Accounts Receivable', 'Trade Receivables'], code: '1100', type: 'Asset' },
@@ -107,9 +107,10 @@ const CONTROL: Record<ControlKey, { names: string[]; code: string; type: string;
   CUSTOMER_ADVANCES: { names: ['Customer advances', 'Customer Advances', 'Customer deposits'], code: '2200', type: 'Liability' },
   SUPPLIER_PREPAYMENTS: { names: ['Supplier prepayments', 'Prepaid to suppliers'], code: '1300', type: 'Asset' },
   FX: { names: ['Foreign Exchange Gains and Losses', 'Realized FX Gain/Loss', 'Exchange Gains/Losses'], code: 'FXGL', type: 'Expense' },
+  EMPLOYEE_CLEARING: { names: ['Employee clearing account', 'Employee Clearing'], code: '2150', type: 'Liability' },
 };
 
-function fxLine(
+export function fxLine(
   accountId: string,
   side: 'debit' | 'credit',
   foreignAmount: number,
@@ -844,6 +845,60 @@ export async function postExpenseClaim(db: any, claim: any) {
     date: claim.date || new Date(),
     lines,
   });
+}
+
+export async function postPayslip(db: any, slip: any) {
+  const journal: JournalLine[] = [];
+  let gross = 0;
+  let deduction = 0;
+  let contribution = 0;
+
+  for (const line of slip.lines || []) {
+    const amount = round2(Number(line.amount) || 0);
+    if (!amount) continue;
+    const item = line.item;
+    const type = line.lineType;
+    if (type === 'earning') {
+      if (!item?.expenseAccountId) throw new Error(`Earnings item "${item?.name || 'line'}" has no expense account`);
+      const acc = await resolveAccount(db, item.expenseAccountId);
+      journal.push(fxLine(acc.id, amount > 0 ? 'debit' : 'credit', Math.abs(amount), BASE_CURRENCY, 1));
+      gross = round2(gross + amount);
+    } else if (type === 'deduction') {
+      if (!item?.liabilityAccountId) throw new Error(`Deduction item "${item?.name || 'line'}" has no liability account`);
+      const acc = await resolveAccount(db, item.liabilityAccountId);
+      journal.push(fxLine(acc.id, amount > 0 ? 'credit' : 'debit', Math.abs(amount), BASE_CURRENCY, 1));
+      deduction = round2(deduction + amount);
+    } else if (type === 'contribution') {
+      if (!item?.expenseAccountId || !item?.liabilityAccountId) {
+        throw new Error(`Contribution item "${item?.name || 'line'}" needs an expense account and a liability account`);
+      }
+      const expense = await resolveAccount(db, item.expenseAccountId);
+      const liability = await resolveAccount(db, item.liabilityAccountId);
+      journal.push(fxLine(expense.id, amount > 0 ? 'debit' : 'credit', Math.abs(amount), BASE_CURRENCY, 1));
+      journal.push(fxLine(liability.id, amount > 0 ? 'credit' : 'debit', Math.abs(amount), BASE_CURRENCY, 1));
+      contribution = round2(contribution + amount);
+    }
+  }
+
+  const net = round2(gross - deduction);
+  if (Math.abs(net) > 0.001) {
+    const clearing = await getControlAccount(db, 'EMPLOYEE_CLEARING');
+    journal.push(fxLine(clearing.id, net > 0 ? 'credit' : 'debit', Math.abs(net), BASE_CURRENCY, 1));
+  }
+
+  const who = slip.employee?.name ? ` · ${slip.employee.name}` : '';
+  if (!journal.length) {
+    await reverseJournal(db, slip.id);
+  } else {
+    await postJournal(db, {
+      sourceDocumentId: slip.id,
+      transactionType: `Payslip ${slip.reference || ''}${who}`.trim(),
+      date: slip.date || new Date(),
+      lines: journal,
+    });
+  }
+
+  return { grossPay: gross, deduction, netPay: net, contribution };
 }
 
 export async function postCreditNote(db: any, note: any) {

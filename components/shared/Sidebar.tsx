@@ -157,6 +157,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
         { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers' },
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims' },
         { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers' },
+        { label: 'Payslips', path: '/payslips', id: 'payslips' },
       ]
     },
     {

@@ -111,7 +111,7 @@ const EmployeesView = () => {
               <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Master Data</span>
             </div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">Employees</h1>
-            <p className="text-slate-500 text-sm mt-1">Person records for expense claims. PAYE, NAPSA and NHIMA payroll is a separate module.</p>
+            <p className="text-slate-500 text-sm mt-1">Person records for expense claims and payslips. Salary is issued under Accounting → Payslips.</p>
           </div>
           <Button variant="primary" onClick={() => navigate('/employees/new')} className="h-10 shadow-md shadow-indigo-500/20">
             <Plus size={16} className="mr-2" />

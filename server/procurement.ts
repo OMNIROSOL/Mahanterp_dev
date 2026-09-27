@@ -699,9 +699,26 @@ router.post('/save-landed-costs', async (req, res) => {
   const { shipmentId, purchaseInvoiceId, expenses, chargeCurrencies, logistics, items } = req.body;
   // items: array of { itemId, poLineId, receivedQty, purchaseCost, freightAllocation, customsAllocation, otherCharges, landedCost, costPerUnit }
   try {
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'No items provided' });
+    if (!purchaseInvoiceId) {
+      return res.status(400).json({ error: 'Landed cost must be linked to a purchase invoice' });
     }
+    const invoice = await prisma.invoices.findUnique({ where: { id: purchaseInvoiceId } });
+    if (!invoice) {
+      return res.status(400).json({ error: 'Purchase invoice not found' });
+    }
+
+    const incoming = Array.isArray(items) ? items : [];
+    const rows = incoming.length > 0 ? incoming : [{
+      itemId: null,
+      poLineId: null,
+      receivedQty: 0,
+      purchaseCost: Number(expenses?.totalFob) || 0,
+      freightAllocation: Number(expenses?.freight) || 0,
+      customsAllocation: Number(expenses?.duty) || 0,
+      otherCharges: Number(expenses?.zabs) || 0,
+      landedCost: 0,
+      costPerUnit: 0,
+    }];
 
     const exchangeRate = Number(expenses?.exchangeRate) || 1;
     const costingMeta = { expenses: expenses || {}, chargeCurrencies: chargeCurrencies || {}, logistics: logistics || {} };
@@ -752,8 +769,8 @@ router.post('/save-landed-costs', async (req, res) => {
     }
 
     const created = await prisma.procurementCosting.createMany({
-      data: items.map((item: any) => ({
-        itemId: item.itemId,
+      data: rows.map((item: any) => ({
+        itemId: item.itemId || null,
         poLineId: item.poLineId || null,
         receivedQty: Number(item.receivedQty) || 0,
         purchaseCost: Number(item.purchaseCost) || 0,
@@ -762,7 +779,7 @@ router.post('/save-landed-costs', async (req, res) => {
         otherCharges: Number(item.otherCharges) || 0,
         landedCost: Number(item.landedCost) || 0,
         costPerUnit: Number(item.costPerUnit) || 0,
-        purchaseInvoiceId: purchaseInvoiceId || null,
+        purchaseInvoiceId,
         shipmentId: shipmentId || null,
         exchangeRate,
         costingMeta,
@@ -770,7 +787,7 @@ router.post('/save-landed-costs', async (req, res) => {
     });
 
     // Landed unit cost is already in ZMW. Do not apply the rate a second time.
-    for (const item of items) {
+    for (const item of rows) {
       if (item.itemId && item.costPerUnit) {
         const dbItem = await prisma.item.findUnique({ where: { id: item.itemId } });
         let margin = (dbItem as any)?.marginPercentage ? Number((dbItem as any).marginPercentage) : 0;

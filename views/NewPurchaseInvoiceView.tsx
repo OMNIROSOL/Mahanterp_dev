@@ -30,7 +30,8 @@ import {
     Hash,
     Info,
     Search as SearchIcon,
-    Briefcase
+    Briefcase,
+    Settings
 } from 'lucide-react';
 import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';

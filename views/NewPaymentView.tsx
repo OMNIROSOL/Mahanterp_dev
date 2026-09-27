@@ -486,6 +486,27 @@ const NewPaymentView = () => {
 
     useEffect(() => {
         const queryParams = new URLSearchParams(location.search);
+        if (queryParams.get('payslip') === '1' && accounts.length) {
+            const employee = queryParams.get('employee') || '';
+            const payAmount = queryParams.get('amount') || '';
+            const account = queryParams.get('account') || 'Employee clearing account';
+            const slipRef = queryParams.get('reference') || '';
+            setPaidToContact('Other');
+            setPaidToOptional(employee);
+            setDescription(slipRef ? `Net pay ${slipRef}` : `Net pay${employee ? ` ${employee}` : ''}`);
+            setItems([{
+                id: Date.now(),
+                role: 'other',
+                item: '',
+                account,
+                description: slipRef ? `Net pay ${slipRef}` : 'Net pay',
+                qty: '1',
+                discount: '',
+                amount: payAmount,
+                total: payAmount
+            }]);
+            return;
+        }
         const customer = queryParams.get('supplier') || queryParams.get('customer');
         const amount = queryParams.get('amount');
         const invRef = queryParams.get('reference');

@@ -647,6 +647,7 @@ model Employee {
   inactive     Boolean?            @default(false)
   createdAt    DateTime?           @default(now()) @map("created_at") @db.Timestamptz(6)
   payers       ExpenseClaimPayer[]
+  payslips     Payslip[]
 
   @@map("employees")
   @@schema("master")
@@ -857,7 +858,7 @@ model ShipmentItem {
 
 model ProcurementCosting {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  itemId            String    @map("item_id") @db.Uuid
+  itemId            String?   @map("item_id") @db.Uuid
   poLineId          String?   @map("po_line_id") @db.Uuid
   grnId             String?   @map("grn_id") @db.Uuid
   receivedQty       Decimal   @map("received_qty") @db.Decimal(12, 4)
@@ -872,7 +873,7 @@ model ProcurementCosting {
   exchangeRate      Decimal?  @default(1) @map("exchange_rate") @db.Decimal(15, 6)
   costingMeta       Json?     @map("costing_meta")
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
-  item              Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  item              Item?     @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@map("procurement_costing")
   @@schema("purchase")
@@ -1160,6 +1161,60 @@ model BankStatement {
   lines       BankStatementLine[]
 
   @@map("bank_statements")
+  @@schema("finance")
+}
+
+model PayslipItem {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  itemType           String        @map("item_type")
+  expenseAccountId   String?       @map("expense_account_id") @db.Uuid
+  liabilityAccountId String?       @map("liability_account_id") @db.Uuid
+  inactive           Boolean?      @default(false)
+  createdAt          DateTime?     @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines              PayslipLine[]
+
+  @@map("payslip_items")
+  @@schema("master")
+}
+
+model Payslip {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date             DateTime      @default(dbgenerated("CURRENT_DATE")) @db.Date
+  reference        String?       @unique
+  description      String?
+  employeeId       String        @map("employee_id") @db.Uuid
+  employee         Employee      @relation(fields: [employeeId], references: [id])
+  grossPay         Decimal       @default(0) @map("gross_pay") @db.Decimal(15, 2)
+  deduction        Decimal       @default(0) @db.Decimal(15, 2)
+  netPay           Decimal       @default(0) @map("net_pay") @db.Decimal(15, 2)
+  contribution     Decimal       @default(0) @db.Decimal(15, 2)
+  showPeriodTotals Boolean       @default(false) @map("show_period_totals")
+  customTitle      Boolean       @default(false) @map("custom_title")
+  customTitleValue String?       @map("custom_title_value")
+  useFooter        Boolean       @default(false) @map("use_footer")
+  footerValue      String?       @map("footer_value")
+  createdAt        DateTime?     @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines            PayslipLine[]
+
+  @@map("payslips")
+  @@schema("finance")
+}
+
+model PayslipLine {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  payslipId   String       @map("payslip_id") @db.Uuid
+  payslip     Payslip      @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  lineType    String       @map("line_type")
+  itemId      String?      @map("item_id") @db.Uuid
+  item        PayslipItem? @relation(fields: [itemId], references: [id])
+  description String?
+  units       Decimal?     @db.Decimal(15, 4)
+  unitPrice   Decimal?     @map("unit_price") @db.Decimal(15, 2)
+  amount      Decimal      @default(0) @db.Decimal(15, 2)
+  division    String?
+
+  @@map("payslip_lines")
   @@schema("finance")
 }
 

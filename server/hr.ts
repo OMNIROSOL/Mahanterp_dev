@@ -1,4 +1,4 @@
-/** Employee master used by expense claims. Payroll (PAYE/NAPSA/NHIMA) is out of scope. */
+/** Employee master used by expense claims and payslips. */
 
 let hrReady = false;
 

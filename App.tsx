@@ -64,6 +64,7 @@ import InvoiceCostOfSalesView from './views/InvoiceCostOfSalesView';
 import InvoiceTransactionsView from './views/InvoiceTransactionsView';
 import SalesDashboard from './views/SalesDashboard';
 import ReportsView from './views/ReportsView';
+import MilReportsView from './views/MilReportsView';
 import AgedReceivablesView from './views/AgedReceivablesView';
 import NewAgedReceivableReportView from './views/NewAgedReceivableReportView';
 import ViewAgedReceivableReportView from './views/ViewAgedReceivableReportView';
@@ -99,6 +100,9 @@ import ViewInterAccountTransferView from './views/ViewInterAccountTransferView';
 import ExpenseClaimsView from './views/ExpenseClaimsView';
 import NewExpenseClaimView from './views/NewExpenseClaimView';
 import ExpenseClaimPayersView from './views/ExpenseClaimPayersView';
+import PayslipsView from './views/PayslipsView';
+import NewPayslipView from './views/NewPayslipView';
+import SettingsPayslipItemsView from './views/SettingsPayslipItemsView';
 import EmployeesView from './views/EmployeesView';
 import NewEmployeeView from './views/NewEmployeeView';
 
@@ -212,6 +216,7 @@ const App = () => {
 
           {/* Reports Routes */}
           <Route path="/reports" element={<ReportsView />} />
+          <Route path="/reports/ops/:reportId" element={<MilReportsView />} />
           <Route path="/reports/unrealized-fx" element={<UnrealizedFxGainsView />} />
           <Route path="/reports/aged-receivables" element={<AgedReceivablesView />} />
           <Route path="/reports/aged-receivables/new" element={<NewAgedReceivableReportView />} />
@@ -259,6 +264,7 @@ const App = () => {
           <Route path="/settings/company" element={<SettingsCompanyView />} />
           <Route path="/settings/approvals" element={<SettingsApprovalsView />} />
           <Route path="/settings/data-import" element={<DataImportView />} />
+          <Route path="/settings/payslip-items" element={<SettingsPayslipItemsView />} />
           <Route path="/settings/divisions" element={<DivisionsView />} />
           <Route path="/settings/currencies" element={<SettingsCurrenciesView />} />
           <Route path="/settings/exchange-rates" element={<ExchangeRatesView />} />
@@ -447,6 +453,10 @@ const App = () => {
           <Route path="/expense-claims/edit/:id" element={<NewExpenseClaimView />} />
           <Route path="/expense-claims/view/:id" element={<NewExpenseClaimView />} />
           <Route path="/expense-claim-payers" element={<ExpenseClaimPayersView />} />
+          <Route path="/payslips" element={<PayslipsView />} />
+          <Route path="/payslips/new" element={<NewPayslipView />} />
+          <Route path="/payslips/edit/:id" element={<NewPayslipView />} />
+          <Route path="/payslips/view/:id" element={<NewPayslipView />} />
 
           {/* Approvals Routes */}
           <Route path="/approvals" element={<ApprovalsView />} />
