@@ -18,7 +18,8 @@ import {
   Receipt,
   Shield,
   Users,
-  Activity
+  Activity,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { AppUser } from '../../types';
@@ -145,6 +146,7 @@ const TopMenu: React.FC = () => {
         { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims', icon: Wallet, countKey: 'expenseClaims' },
         { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers', icon: Users },
         { label: 'Payslips', path: '/payslips', id: 'payslips', icon: FileSpreadsheet },
+        { label: 'Journal Entries', path: '/journal-entries', id: 'journal-entries', icon: BookOpen },
       ]
     },
     {

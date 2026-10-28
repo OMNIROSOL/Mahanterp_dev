@@ -4,7 +4,7 @@ import express from 'express';
 import multer from 'multer';
 import exceljs from 'exceljs';
 import { currencyCode } from './currency';
-import { postPayment, postReceipt } from './ledger';
+import { postPayment, postReceipt, postJournal } from './ledger';
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const ALLOWED_EXT = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.xls', '.xlsx', '.csv']);
@@ -51,6 +51,45 @@ export async function ensurePhase5Tables(db: any) {
       matched_type TEXT,
       matched_id UUID,
       matched_reference TEXT
+    )`,
+    `ALTER TABLE master.suppliers ADD COLUMN IF NOT EXISTS bank_details JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE master.suppliers ADD COLUMN IF NOT EXISTS product_categories JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE master.suppliers ADD COLUMN IF NOT EXISTS tpin TEXT`,
+    `CREATE TABLE IF NOT EXISTS master.system_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS finance.bank_rules (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pattern TEXT NOT NULL,
+      account_name TEXT NOT NULL,
+      target_type TEXT DEFAULT 'Payment',
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS finance.fixed_assets (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      asset_code TEXT UNIQUE NOT NULL,
+      asset_name TEXT NOT NULL,
+      description TEXT,
+      purchase_date DATE,
+      purchase_cost DECIMAL(15,2) DEFAULT 0,
+      depreciation_rate DECIMAL(5,2) DEFAULT 0,
+      depreciation_method TEXT DEFAULT 'Straight Line',
+      accumulated_depreciation DECIMAL(15,2) DEFAULT 0,
+      book_value DECIMAL(15,2) DEFAULT 0,
+      asset_account_id UUID,
+      expense_account_id UUID,
+      status TEXT DEFAULT 'Active',
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS finance.depreciation_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      asset_id UUID NOT NULL REFERENCES finance.fixed_assets(id) ON DELETE CASCADE,
+      entry_date DATE NOT NULL,
+      amount DECIMAL(15,2) NOT NULL,
+      description TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
     )`,
   ];
   for (const sql of statements) {
@@ -486,6 +525,9 @@ export function registerPhase5Routes(app: express.Express, prisma: any) {
       const isOutflow = Number(line.amount) < 0;
       const contact = String(req.body.contact || line.description || 'Bank statement').slice(0, 120);
       if (isOutflow) {
+        const isCharge = req.body.account?.toLowerCase().includes('charge') || 
+                         /charge|fee|comm|tariff|duty|vat|sms|maint/i.test(line.description || '');
+        const targetAccount = req.body.account || (isCharge ? 'Bank Charges' : undefined);
         const payment = await prisma.payment.create({
           data: {
             reference: `PAY-REC-${Date.now()}`,
@@ -496,6 +538,15 @@ export function registerPhase5Routes(app: express.Express, prisma: any) {
             currency: 'ZMW',
             description: line.description || 'Created from bank statement',
             status: 'Completed',
+            items: targetAccount ? [
+              {
+                item: '',
+                account: targetAccount,
+                description: line.description || 'Bank charge',
+                amount: amt,
+                total: amt
+              }
+            ] : undefined
           },
         });
         try { await postPayment(prisma, payment); } catch (err) { console.error('[bank create payment]', err); }
@@ -509,6 +560,9 @@ export function registerPhase5Routes(app: express.Express, prisma: any) {
         );
         return res.json({ type: 'payment', document: payment });
       }
+      const isInterest = req.body.account?.toLowerCase().includes('interest') ||
+                         /interest|yield/i.test(line.description || '');
+      const targetIncomeAccount = req.body.account || (isInterest ? 'Interest Income' : undefined);
       const receipt = await prisma.receipt.create({
         data: {
           reference: `RCP-REC-${Date.now()}`,
@@ -519,6 +573,15 @@ export function registerPhase5Routes(app: express.Express, prisma: any) {
           currency: 'ZMW',
           description: line.description || 'Created from bank statement',
           status: 'Completed',
+          items: targetIncomeAccount ? [
+            {
+              item: '',
+              account: targetIncomeAccount,
+              description: line.description || 'Bank credit',
+              amount: amt,
+              total: amt
+            }
+          ] : undefined
         },
       });
       try { await postReceipt(prisma, receipt); } catch (err) { console.error('[bank create receipt]', err); }
@@ -573,6 +636,685 @@ export function registerPhase5Routes(app: express.Express, prisma: any) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // --- LOCK DATE SETTINGS ---
+  app.get('/api/settings/lock-date', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT value FROM master.system_settings WHERE key = 'lock_date'`
+      );
+      res.json(rows[0]?.value || { lockDate: null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/settings/lock-date', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const { lockDate } = req.body;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO master.system_settings (key, value, updated_at)
+         VALUES ('lock_date', $1::jsonb, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        JSON.stringify({ lockDate: lockDate || null })
+      );
+      res.json({ success: true, lockDate: lockDate || null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- STARTING BALANCES SETTINGS ---
+  app.get('/api/settings/starting-balances', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT value FROM master.system_settings WHERE key = 'starting_balances'`
+      );
+      res.json(rows[0]?.value || { startingDate: null, balances: [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/settings/starting-balances', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const { startingDate, balances } = req.body;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO master.system_settings (key, value, updated_at)
+         VALUES ('starting_balances', $1::jsonb, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        JSON.stringify({ startingDate, balances: balances || [] })
+      );
+      res.json({ success: true, startingDate, balances });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- BANK RULES ---
+  app.get('/api/bank-rules', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT id, pattern, account_name AS "accountName", target_type AS "targetType", created_at AS "createdAt"
+         FROM finance.bank_rules ORDER BY created_at DESC`
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/bank-rules', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const { pattern, accountName, targetType } = req.body;
+      if (!pattern || !accountName) return res.status(400).json({ error: 'pattern and accountName are required' });
+      const idRow = await prisma.$queryRawUnsafe(`SELECT gen_random_uuid() AS id`);
+      const id = idRow[0].id;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO finance.bank_rules (id, pattern, account_name, target_type)
+         VALUES ($1::uuid, $2, $3, $4)`,
+        id, pattern, accountName, targetType || 'Payment'
+      );
+      res.json({ id, pattern, accountName, targetType: targetType || 'Payment' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/bank-rules/:id', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const { pattern, accountName, targetType } = req.body;
+      await prisma.$executeRawUnsafe(
+        `UPDATE finance.bank_rules
+         SET pattern = $2, account_name = $3, target_type = $4
+         WHERE id = $1::uuid`,
+        req.params.id, pattern, accountName, targetType || 'Payment'
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/bank-rules/:id', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      await prisma.$executeRawUnsafe(`DELETE FROM finance.bank_rules WHERE id = $1::uuid`, req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- FIXED ASSETS ---
+  app.get('/api/fixed-assets', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT fa.id, fa.asset_code AS "assetCode", fa.asset_name AS "assetName",
+                fa.description, fa.purchase_date AS "purchaseDate", fa.purchase_cost AS "purchaseCost",
+                fa.depreciation_rate AS "depreciationRate", fa.depreciation_method AS "depreciationMethod",
+                fa.accumulated_depreciation AS "accumulatedDepreciation", fa.book_value AS "bookValue",
+                fa.asset_account_id AS "assetAccountId", fa.expense_account_id AS "expenseAccountId",
+                fa.status, fa.created_at AS "createdAt",
+                coa1.name AS "assetAccountName", coa2.name AS "expenseAccountName"
+         FROM finance.fixed_assets fa
+         LEFT JOIN finance.chart_of_accounts coa1 ON coa1.id = fa.asset_account_id
+         LEFT JOIN finance.chart_of_accounts coa2 ON coa2.id = fa.expense_account_id
+         ORDER BY fa.asset_code ASC`
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/fixed-assets', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const {
+        assetCode, assetName, description, purchaseDate, purchaseCost,
+        depreciationRate, depreciationMethod, assetAccountId, expenseAccountId
+      } = req.body;
+      if (!assetCode || !assetName) return res.status(400).json({ error: 'Asset code and name are required' });
+      const cost = Number(purchaseCost) || 0;
+      const rate = Number(depreciationRate) || 0;
+      const idRow = await prisma.$queryRawUnsafe(`SELECT gen_random_uuid() AS id`);
+      const id = idRow[0].id;
+      const pDate = purchaseDate || new Date().toISOString().slice(0, 10);
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO finance.fixed_assets (
+          id, asset_code, asset_name, description, purchase_date, purchase_cost,
+          depreciation_rate, depreciation_method, accumulated_depreciation, book_value,
+          asset_account_id, expense_account_id, status
+        ) VALUES (
+          $1::uuid, $2, $3, $4, $5::date, $6, $7, $8, 0, $6, $9::uuid, $10::uuid, 'Active'
+        )`,
+        id, assetCode, assetName, description || null, pDate,
+        cost, rate, depreciationMethod || 'Straight Line',
+        assetAccountId || null, expenseAccountId || null
+      );
+      res.json({ id, assetCode, assetName, purchaseCost: cost, bookValue: cost });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/fixed-assets/:id', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT fa.id, fa.asset_code AS "assetCode", fa.asset_name AS "assetName",
+                fa.description, fa.purchase_date AS "purchaseDate", fa.purchase_cost AS "purchaseCost",
+                fa.depreciation_rate AS "depreciationRate", fa.depreciation_method AS "depreciationMethod",
+                fa.accumulated_depreciation AS "accumulatedDepreciation", fa.book_value AS "bookValue",
+                fa.asset_account_id AS "assetAccountId", fa.expense_account_id AS "expenseAccountId",
+                fa.status, coa1.name AS "assetAccountName", coa2.name AS "expenseAccountName"
+         FROM finance.fixed_assets fa
+         LEFT JOIN finance.chart_of_accounts coa1 ON coa1.id = fa.asset_account_id
+         LEFT JOIN finance.chart_of_accounts coa2 ON coa2.id = fa.expense_account_id
+         WHERE fa.id = $1::uuid`,
+        req.params.id
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Fixed asset not found' });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/fixed-assets/:id', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const {
+        assetCode, assetName, description, purchaseDate, purchaseCost,
+        depreciationRate, depreciationMethod, assetAccountId, expenseAccountId, status
+      } = req.body;
+      const cost = Number(purchaseCost) || 0;
+      await prisma.$executeRawUnsafe(
+        `UPDATE finance.fixed_assets
+         SET asset_code = $2, asset_name = $3, description = $4,
+             purchase_date = $5::date, purchase_cost = $6,
+             depreciation_rate = $7, depreciation_method = $8,
+             asset_account_id = $9::uuid, expense_account_id = $10::uuid,
+             status = $11, book_value = $6 - accumulated_depreciation
+         WHERE id = $1::uuid`,
+        req.params.id, assetCode, assetName, description || null,
+        purchaseDate, cost, Number(depreciationRate) || 0,
+        depreciationMethod || 'Straight Line',
+        assetAccountId || null, expenseAccountId || null, status || 'Active'
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/fixed-assets/:id', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      await prisma.$executeRawUnsafe(`DELETE FROM finance.fixed_assets WHERE id = $1::uuid`, req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- DEPRECIATION ENTRIES ---
+  app.get('/api/depreciation-entries', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT de.id, de.asset_id AS "assetId", de.entry_date AS "entryDate",
+                de.amount, de.description, de.created_at AS "createdAt",
+                fa.asset_code AS "assetCode", fa.asset_name AS "assetName"
+         FROM finance.depreciation_entries de
+         JOIN finance.fixed_assets fa ON fa.id = de.asset_id
+         ORDER BY de.entry_date DESC`
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/depreciation-entries', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const { assetId, entryDate, amount, description } = req.body;
+      const amt = Number(amount) || 0;
+      if (!assetId || amt <= 0) return res.status(400).json({ error: 'Asset and positive amount required' });
+
+      const assetRows = await prisma.$queryRawUnsafe(
+        `SELECT id, asset_code AS "assetCode", asset_name AS "assetName",
+                asset_account_id AS "assetAccountId", expense_account_id AS "expenseAccountId"
+         FROM finance.fixed_assets WHERE id = $1::uuid`,
+        assetId
+      );
+      if (!assetRows.length) return res.status(404).json({ error: 'Asset not found' });
+      const asset = assetRows[0];
+
+      const idRow = await prisma.$queryRawUnsafe(`SELECT gen_random_uuid() AS id`);
+      const id = idRow[0].id;
+      const dateVal = entryDate || new Date().toISOString().slice(0, 10);
+
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO finance.depreciation_entries (id, asset_id, entry_date, amount, description)
+         VALUES ($1::uuid, $2::uuid, $3::date, $4, $5)`,
+        id, assetId, dateVal, amt, description || `Depreciation for ${asset.assetName}`
+      );
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE finance.fixed_assets
+         SET accumulated_depreciation = accumulated_depreciation + $2,
+             book_value = purchase_cost - (accumulated_depreciation + $2)
+         WHERE id = $1::uuid`,
+        assetId, amt
+      );
+
+      if (asset.expenseAccountId && asset.assetAccountId) {
+        try {
+          await postJournal(prisma, {
+            sourceDocumentId: id,
+            transactionType: `Depreciation ${asset.assetCode}`,
+            date: new Date(dateVal),
+            lines: [
+              { accountId: asset.expenseAccountId, debit: amt, credit: 0, description: `Depreciation - ${asset.assetName}` },
+              { accountId: asset.assetAccountId, debit: 0, credit: amt, description: `Accumulated Depreciation - ${asset.assetName}` }
+            ]
+          });
+        } catch (glErr) {
+          console.error('Failed to post depreciation GL journal:', glErr);
+        }
+      }
+
+      res.json({ id, assetId, entryDate: dateVal, amount: amt });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/depreciation-entries/:id', async (req, res) => {
+    try {
+      await ensurePhase5Tables(prisma);
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT asset_id AS "assetId", amount FROM finance.depreciation_entries WHERE id = $1::uuid`,
+        req.params.id
+      );
+      if (rows.length) {
+        const { assetId, amount } = rows[0];
+        await prisma.$executeRawUnsafe(
+          `UPDATE finance.fixed_assets
+           SET accumulated_depreciation = GREATEST(0, accumulated_depreciation - $2),
+               book_value = purchase_cost - GREATEST(0, accumulated_depreciation - $2)
+           WHERE id = $1::uuid`,
+          assetId, Number(amount)
+        );
+        await prisma.$executeRawUnsafe(`DELETE FROM finance.ledger_entries WHERE source_document_id = $1::uuid`, req.params.id);
+        await prisma.$executeRawUnsafe(`DELETE FROM finance.depreciation_entries WHERE id = $1::uuid`, req.params.id);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MANAGER.IO REPORTS ---
+  // 1. Aged Payables
+  app.get('/api/reports/aged-payables', async (req, res) => {
+    try {
+      const suppliers = await prisma.suppliers.findMany({ orderBy: { name: 'asc' } });
+      const invoices = await prisma.invoices.findMany({
+        where: { status: { notIn: ['Draft', 'Paid'] } },
+        orderBy: { created_at: 'asc' }
+      });
+
+      const today = new Date();
+      const rows = suppliers.map((sup: any) => {
+        const supInvoices = invoices.filter((i: any) => i.supplier_id === sup.id);
+        let current = 0, d1_30 = 0, d31_60 = 0, d61_90 = 0, d90Plus = 0;
+
+        for (const inv of supInvoices) {
+          const amt = Number(inv.grand_total || 0);
+          const due = new Date(inv.due_date || inv.created_at || Date.now());
+          const diff = Math.floor((today.getTime() - due.getTime()) / 86400000);
+
+          if (diff <= 0) current += amt;
+          else if (diff <= 30) d1_30 += amt;
+          else if (diff <= 60) d31_60 += amt;
+          else if (diff <= 90) d61_90 += amt;
+          else d90Plus += amt;
+        }
+
+        const total = current + d1_30 + d31_60 + d61_90 + d90Plus;
+        return {
+          id: sup.id,
+          supplier: sup.name,
+          code: sup.code || '',
+          currency: sup.currency || 'ZMW',
+          current: Math.round(current * 100) / 100,
+          days1_30: Math.round(d1_30 * 100) / 100,
+          days31_60: Math.round(d31_60 * 100) / 100,
+          days61_90: Math.round(d61_90 * 100) / 100,
+          days90Plus: Math.round(d90Plus * 100) / 100,
+          total: Math.round(total * 100) / 100,
+        };
+      }).filter((r: any) => r.total > 0);
+
+      const totals = rows.reduce((acc: any, r: any) => ({
+        current: acc.current + r.current,
+        days1_30: acc.days1_30 + r.days1_30,
+        days31_60: acc.days31_60 + r.days31_60,
+        days61_90: acc.days61_90 + r.days61_90,
+        days90Plus: acc.days90Plus + r.days90Plus,
+        total: acc.total + r.total,
+      }), { current: 0, days1_30: 0, days31_60: 0, days61_90: 0, days90Plus: 0, total: 0 });
+
+      res.json({ rows, totals });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2. Supplier Summary
+  app.get('/api/reports/supplier-summary', async (req, res) => {
+    try {
+      const suppliers = await prisma.suppliers.findMany({ orderBy: { name: 'asc' } });
+      const [invoices, payments, debitNotes] = await Promise.all([
+        prisma.invoices.findMany({ where: { status: { not: 'Draft' } } }),
+        prisma.payment.findMany(),
+        prisma.debitNote.findMany()
+      ]);
+
+      const rows = suppliers.map((sup: any) => {
+        const supInvoices = invoices.filter((i: any) => i.supplier_id === sup.id);
+        const supPayments = payments.filter((p: any) => p.paidToContact === sup.name);
+        const supDebits = debitNotes.filter((d: any) => d.supplierId === sup.id);
+
+        const totalBilled = supInvoices.reduce((s: number, i: any) => s + Number(i.grand_total || 0), 0);
+        const totalPaid = supPayments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0) +
+                          supDebits.reduce((s: number, d: any) => s + Number(d.amount || 0), 0);
+        const balance = totalBilled - totalPaid;
+
+        return {
+          id: sup.id,
+          code: sup.code || '',
+          name: sup.name,
+          currency: sup.currency || 'ZMW',
+          tpin: sup.tpin || '',
+          phone: sup.phone || '',
+          email: sup.email || '',
+          totalBilled: Math.round(totalBilled * 100) / 100,
+          totalPaid: Math.round(totalPaid * 100) / 100,
+          balance: Math.round(balance * 100) / 100,
+        };
+      });
+
+      const totals = rows.reduce((acc: any, r: any) => ({
+        totalBilled: acc.totalBilled + r.totalBilled,
+        totalPaid: acc.totalPaid + r.totalPaid,
+        balance: acc.balance + r.balance,
+      }), { totalBilled: 0, totalPaid: 0, balance: 0 });
+
+      res.json({ rows, totals });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 3. General Ledger Summary
+  app.get('/api/reports/gl-summary', async (req, res) => {
+    try {
+      const from = req.query.from ? new Date(String(req.query.from)) : null;
+      const to = req.query.to ? new Date(String(req.query.to)) : null;
+      if (to) to.setHours(23, 59, 59, 999);
+
+      const accounts = await prisma.chartOfAccount.findMany({
+        include: { ledgerEntries: true },
+        orderBy: { code: 'asc' }
+      });
+
+      const rows = accounts.map((acc: any) => {
+        const entries = acc.ledgerEntries || [];
+        let opening = 0;
+        let debitMovement = 0;
+        let creditMovement = 0;
+
+        for (const e of entries) {
+          const d = new Date(e.transactionDate || e.createdAt);
+          const deb = Number(e.debit || 0);
+          const cred = Number(e.credit || 0);
+
+          if (from && d < from) {
+            opening += (acc.accountType === 'Asset' || acc.accountType === 'Expense') ? (deb - cred) : (cred - deb);
+          } else if (!to || d <= to) {
+            debitMovement += deb;
+            creditMovement += cred;
+          }
+        }
+
+        const net = (acc.accountType === 'Asset' || acc.accountType === 'Expense')
+          ? (debitMovement - creditMovement)
+          : (creditMovement - debitMovement);
+        const closing = opening + net;
+
+        return {
+          id: acc.id,
+          code: acc.code,
+          name: acc.name,
+          accountType: acc.accountType,
+          currency: acc.currency || 'ZMW',
+          openingBalance: Math.round(opening * 100) / 100,
+          debitMovement: Math.round(debitMovement * 100) / 100,
+          creditMovement: Math.round(creditMovement * 100) / 100,
+          netMovement: Math.round(net * 100) / 100,
+          closingBalance: Math.round(closing * 100) / 100,
+        };
+      });
+
+      const totals = rows.reduce((acc: any, r: any) => ({
+        debitMovement: acc.debitMovement + r.debitMovement,
+        creditMovement: acc.creditMovement + r.creditMovement,
+      }), { debitMovement: 0, creditMovement: 0 });
+
+      res.json({ rows, totals });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 4. Tax Summary (VAT 16%)
+  app.get('/api/reports/tax-summary', async (req, res) => {
+    try {
+      const from = req.query.from ? new Date(String(req.query.from)) : null;
+      const to = req.query.to ? new Date(String(req.query.to)) : null;
+      if (to) to.setHours(23, 59, 59, 999);
+
+      const [invoices, purchases, creditNotes, debitNotes] = await Promise.all([
+        prisma.invoice.findMany({ where: { status: { not: 'Draft' } } }),
+        prisma.invoices.findMany({ where: { status: { not: 'Draft' } } }),
+        prisma.creditNote.findMany(),
+        prisma.debitNote.findMany()
+      ]);
+
+      let outputTaxableSales = 0;
+      let outputVat = 0;
+      let inputTaxablePurchases = 0;
+      let inputVat = 0;
+
+      for (const inv of invoices) {
+        const d = new Date(inv.issueDate || inv.createdAt);
+        if ((from && d < from) || (to && d > to)) continue;
+        const total = Number(inv.grandTotal || 0);
+        const vat = Number((inv.docOptions as any)?.taxAmount || 0);
+        outputTaxableSales += (total - vat);
+        outputVat += vat;
+      }
+
+      for (const cn of creditNotes) {
+        const d = new Date(cn.issueDate || cn.createdAt);
+        if ((from && d < from) || (to && d > to)) continue;
+        const total = Number(cn.grandTotal || 0);
+        const vat = Number((cn.docOptions as any)?.taxAmount || 0);
+        outputTaxableSales -= (total - vat);
+        outputVat -= vat;
+      }
+
+      for (const pinv of purchases) {
+        const d = new Date(pinv.created_at || Date.now());
+        if ((from && d < from) || (to && d > to)) continue;
+        const total = Number(pinv.grand_total || 0);
+        const vat = Number((pinv.docOptions as any)?.taxAmount || 0);
+        inputTaxablePurchases += (total - vat);
+        inputVat += vat;
+      }
+
+      for (const dn of debitNotes) {
+        const d = new Date(dn.issueDate || dn.createdAt);
+        if ((from && d < from) || (to && d > to)) continue;
+        const total = Number(dn.amount || 0);
+        const vat = 0;
+        inputTaxablePurchases -= (total - vat);
+        inputVat -= vat;
+      }
+
+      const netTaxPayable = outputVat - inputVat;
+
+      res.json({
+        outputTaxableSales: Math.round(outputTaxableSales * 100) / 100,
+        outputVat: Math.round(outputVat * 100) / 100,
+        inputTaxablePurchases: Math.round(inputTaxablePurchases * 100) / 100,
+        inputVat: Math.round(inputVat * 100) / 100,
+        netTaxPayable: Math.round(netTaxPayable * 100) / 100,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 5. Cash Flow Statement
+  app.get('/api/reports/cash-flow', async (req, res) => {
+    try {
+      const from = req.query.from ? new Date(String(req.query.from)) : null;
+      const to = req.query.to ? new Date(String(req.query.to)) : null;
+      if (to) to.setHours(23, 59, 59, 999);
+
+      const [receipts, payments, expenseClaims] = await Promise.all([
+        prisma.receipt.findMany(),
+        prisma.payment.findMany(),
+        prisma.expenseClaim.findMany()
+      ]);
+
+      let customerReceipts = 0;
+      let supplierPayments = 0;
+      let operationalExpenses = 0;
+
+      for (const r of receipts) {
+        const d = new Date(r.date || r.createdAt);
+        if ((from && d < from) || (to && d > to)) continue;
+        customerReceipts += Number(r.amount || 0);
+      }
+
+      for (const p of payments) {
+        const d = new Date(p.date || p.createdAt);
+        if ((from && d < from) || (to && d > to)) continue;
+        supplierPayments += Number(p.amount || 0);
+      }
+
+      for (const ec of expenseClaims) {
+        const d = new Date(ec.date || ec.createdAt);
+        if ((from && d < from) || (to && d > to)) continue;
+        operationalExpenses += Number(ec.amount || 0);
+      }
+
+      const netOperating = customerReceipts - supplierPayments - operationalExpenses;
+
+      res.json({
+        operatingActivities: {
+          customerReceipts: Math.round(customerReceipts * 100) / 100,
+          supplierPayments: Math.round(supplierPayments * 100) / 100,
+          operationalExpenses: Math.round(operationalExpenses * 100) / 100,
+          netOperating: Math.round(netOperating * 100) / 100,
+        },
+        investingActivities: {
+          purchaseOfFixedAssets: 0,
+          saleOfFixedAssets: 0,
+          netInvesting: 0,
+        },
+        financingActivities: {
+          capitalContributions: 0,
+          drawings: 0,
+          netFinancing: 0,
+        },
+        netCashMovement: Math.round(netOperating * 100) / 100,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 6. Inventory Value Summary
+  app.get('/api/reports/inventory-value-summary', async (req, res) => {
+    try {
+      const items = await prisma.item.findMany({ orderBy: { itemCode: 'asc' } });
+      const rows = items.map((it: any) => {
+        const qty = Number(it.qtyOnHand || 0);
+        const cost = Number(it.purchasePrice || 0);
+        const value = Math.round(qty * cost * 100) / 100;
+        return {
+          id: it.id,
+          code: it.itemCode,
+          name: it.itemName,
+          category: it.category || 'General',
+          unit: it.unitName || 'Pcs',
+          qtyOnHand: qty,
+          unitCost: cost,
+          totalValue: value,
+        };
+      });
+
+      const totalValue = rows.reduce((s: number, r: any) => s + r.totalValue, 0);
+      const totalQty = rows.reduce((s: number, r: any) => s + r.qtyOnHand, 0);
+
+      res.json({
+        rows,
+        totals: {
+          totalQty,
+          totalValue: Math.round(totalValue * 100) / 100
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
+
+export async function checkLockDate(prisma: any, dateInput: any) {
+  if (!dateInput) return;
+  const targetDate = new Date(dateInput);
+  if (isNaN(targetDate.getTime())) return;
+
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT value FROM master.system_settings WHERE key = 'lock_date'`
+  ).catch(() => []);
+  if (!rows || !rows.length || !rows[0].value?.lockDate) return;
+
+  const lockDate = new Date(rows[0].value.lockDate);
+  lockDate.setHours(23, 59, 59, 999);
+
+  if (targetDate <= lockDate) {
+    const formatted = rows[0].value.lockDate;
+    const err: any = new Error(`Period is locked: Transactions on or before ${formatted} cannot be created or modified.`);
+    err.statusCode = 403;
+    throw err;
+  }
 }
 
 async function validateImport(db: any, type: string, rows: Record<string, any>[]) {

@@ -34,10 +34,23 @@ const ShipmentPlannerView = () => {
             )
         },
         { id: 'Reference', header: 'Reference', accessor: (s: any) => <span className="font-bold text-slate-900">{s.reference}</span> },
-        { id: 'Supplier', header: 'Supplier', accessor: (s: any) => s.supplier?.name || s.supplierId },
-        { id: 'ETA', header: 'ETA', accessor: (s: any) => new Date(s.eta).toLocaleDateString() },
+        { id: 'Supplier', header: 'Supplier', accessor: (s: any) => s.supplier?.name || s.supplier || s.supplierId },
+        { id: 'Route', header: 'Route / Corridor', accessor: (s: any) => <span className="text-xs font-semibold text-slate-600">{s.landTransportRoute || `${s.portOfArrival || 'Port'} → ${s.finalDestination || 'Lusaka'}`}</span> },
+        { id: 'ETD', header: 'ETD', accessor: (s: any) => s.etd ? new Date(s.etd).toLocaleDateString() : '—' },
+        { id: 'ETA', header: 'ETA', accessor: (s: any) => s.eta ? new Date(s.eta).toLocaleDateString() : '—' },
+        { id: 'Tracking', header: 'Tracking / BL', accessor: (s: any) => <span className="font-mono text-xs">{s.trackingReferenceNumber || s.blNumber || '—'}</span> },
         { id: 'Vessel', header: 'Vessel', accessor: (s: any) => s.vesselName || '—' },
-        { id: 'Status', header: 'Status', accessor: (s: any) => <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{s.status}</span> },
+        { id: 'Status', header: 'Status', accessor: (s: any) => (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                s.status === 'Completed' || s.status === 'Received'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : s.status === 'In Transit'
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'bg-slate-100 text-slate-600'
+            }`}>
+                {s.status}
+            </span>
+        ) },
     ];
 
     return (

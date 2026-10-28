@@ -14,7 +14,11 @@ import {
   BarChart3,
   TrendingUp,
   ArrowRight,
-  ShoppingBag
+  ShoppingBag,
+  Scale,
+  Building,
+  Receipt,
+  Percent
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 
@@ -59,6 +63,13 @@ const ReportsView: React.FC = () => {
       icon: Users,
       reports: [
         {
+          title: "Statement of Account (Full Ledger)",
+          description: "Official customer statement with company header, running balance, debit/credit entries, and print/PDF.",
+          icon: FileSpreadsheet,
+          path: "/customers/statement",
+          color: "text-blue-700"
+        },
+        {
           title: "Aged Receivables",
           description: "Breakdown of outstanding customer balances by age (30, 60, 90+ days).",
           icon: LineChart,
@@ -89,6 +100,33 @@ const ReportsView: React.FC = () => {
       ]
     },
     {
+      title: "Supplier Reports",
+      icon: Building,
+      reports: [
+        {
+          title: "Supplier Statement of Account (Full Ledger)",
+          description: "Official supplier statement with running payable balance, purchase invoices, and payments.",
+          icon: FileSpreadsheet,
+          path: "/suppliers/statement",
+          color: "text-indigo-700"
+        },
+        {
+          title: "Aged Payables",
+          description: "Breakdown of overdue supplier purchase invoices by aging brackets (30, 60, 90+ days).",
+          icon: LineChart,
+          path: "/reports/aged-payables",
+          color: "text-rose-600"
+        },
+        {
+          title: "Supplier Summary",
+          description: "Comprehensive list of suppliers with total billed, total paid, and net balance payable.",
+          icon: Users,
+          path: "/reports/supplier-summary",
+          color: "text-blue-600"
+        }
+      ]
+    },
+    {
       title: "Sales Reports",
       icon: ShoppingCart,
       reports: [
@@ -109,6 +147,74 @@ const ReportsView: React.FC = () => {
       ]
     },
     {
+      title: "Financial Reports",
+      icon: Wallet,
+      reports: [
+        {
+          title: "Trial Balance",
+          description: "Debit and credit totals from the general ledger to verify accounting balance.",
+          icon: Scale,
+          path: "/reports/trial-balance",
+          color: "text-indigo-600"
+        },
+        {
+          title: "General Ledger Summary",
+          description: "Opening balances, net movements, and closing balances for all chart of accounts.",
+          icon: FileSpreadsheet,
+          path: "/reports/gl-summary",
+          color: "text-blue-700"
+        },
+        {
+          title: "Statement of Cash Flows",
+          description: "Cash inflows and outflows categorized by operating, investing, and financing activities.",
+          icon: Wallet,
+          path: "/reports/cash-flow",
+          color: "text-emerald-600"
+        },
+        {
+          title: "Tax Summary & Audit (VAT 16%)",
+          description: "Output VAT on sales, input VAT on purchases, and net settlement payable to ZRA.",
+          icon: Percent,
+          path: "/reports/tax-summary",
+          color: "text-amber-600"
+        },
+        {
+          title: "Unrealized Foreign Exchange Gains (Losses)",
+          description: "Revaluation of foreign currency bank accounts, USD AR, and USD AP at current exchange rates.",
+          icon: TrendingUp,
+          path: "/reports/unrealized-fx",
+          color: "text-teal-600"
+        },
+        {
+          title: "Financial Statements (Balance Sheet & P&L)",
+          description: "Full financial statements with drill-down into account ledgers.",
+          icon: Wallet,
+          path: "/summary",
+          color: "text-indigo-800"
+        }
+      ]
+    },
+    {
+      title: "Inventory Reports",
+      icon: Package,
+      reports: [
+        {
+          title: "Inventory Value Summary",
+          description: "Valuation of all stock on hand based on moving average unit costs.",
+          icon: Package,
+          path: "/reports/inventory-value-summary",
+          color: "text-emerald-700"
+        },
+        {
+          title: "Inventory Transactions",
+          description: "Track all stock movements, transfers, and adjustments across locations.",
+          icon: Package,
+          path: "/inventory-items",
+          color: "text-slate-600"
+        }
+      ]
+    },
+    {
       title: "Mahant Operations",
       icon: BarChart3,
       reports: [
@@ -123,35 +229,15 @@ const ReportsView: React.FC = () => {
       ]
     },
     {
-      title: "Inventory Reports",
-      icon: Package,
+      title: "Payroll & Statutory Reports",
+      icon: Users,
       reports: [
         {
-          title: "Inventory Transactions",
-          description: "Track all stock movements, transfers, and adjustments across locations.",
-          icon: Package,
-          path: "/inventory-items",
-          color: "text-slate-600"
-        }
-      ]
-    },
-    {
-      title: "Financial Reports",
-      icon: Wallet,
-      reports: [
-        {
-          title: "Summary",
-          description: "Balance sheet and profit and loss from your chart of accounts.",
-          icon: Wallet,
-          path: "/summary",
+          title: "Payslip Summary Report",
+          description: "Summary of Basic Salary, Allowances, Gross Pay, PAYE, NAPSA, NHIMA, SDL, Net Pay, and Employer Costs.",
+          icon: FileSpreadsheet,
+          path: "/reports/payslip-summary",
           color: "text-indigo-600"
-        },
-        {
-          title: "Unrealized Foreign Exchange Gains (Losses)",
-          description: "Summary of open foreign balances translated at current exchange rates",
-          icon: TrendingUp,
-          path: "/reports/unrealized-fx",
-          color: "text-emerald-600"
         }
       ]
     }

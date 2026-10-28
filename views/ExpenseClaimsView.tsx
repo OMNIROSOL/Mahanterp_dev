@@ -8,6 +8,7 @@ import {
     Plus, Search, FileText, HelpCircle,
     ChevronDown, ChevronUp, ArrowUpDown
 } from 'lucide-react';
+import { formatDateDMY } from '../utils/dateUtils';
 
 const ExpenseClaimsView = () => {
     const navigate = useNavigate();
@@ -95,7 +96,7 @@ const ExpenseClaimsView = () => {
         {
             id: 'date',
             header: <div className="flex items-center cursor-pointer group hover:text-blue-600 transition-colors" onClick={() => handleSort('date')}>Date <SortIcon column="date" /></div>,
-            accessor: (c: any) => <span className="text-slate-600 font-medium">{new Date(c.date).toLocaleDateString()}</span>
+            accessor: (c: any) => <span className="text-slate-600 font-medium">{formatDateDMY(c.date)}</span>
         },
         {
             id: 'Paid by',
@@ -106,6 +107,11 @@ const ExpenseClaimsView = () => {
             id: 'payee',
             header: <div className="flex items-center cursor-pointer group hover:text-blue-600 transition-colors" onClick={() => handleSort('payee')}>Payee <SortIcon column="payee" /></div>,
             accessor: (c: any) => <span className="text-slate-600 uppercase text-[11px] font-bold">{c.payee || '—'}</span>
+        },
+        {
+            id: 'division',
+            header: <div className="flex items-center cursor-pointer group hover:text-blue-600 transition-colors" onClick={() => handleSort('division')}>Division <SortIcon column="division" /></div>,
+            accessor: (c: any) => <span className="text-slate-500 font-medium text-[12px]">{c.division || 'General'}</span>
         },
         {
             id: 'description',

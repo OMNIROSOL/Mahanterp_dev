@@ -62,7 +62,7 @@ const ViewSalesOrderView = () => {
     }, [id]);
 
     const customerData = order?.customer;
-    const customerEmail = customerData?.email || (order?.customer?.name ? `${order.customer.name.toLowerCase().replace(/\s+/g, '.')}@example.com` : '');
+    const customerEmail = customerData?.email || '';
 
     const totals = useMemo(() => {
         if (!order) return { subtotal: 0, tax: 0, total: 0 };

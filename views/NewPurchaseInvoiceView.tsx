@@ -101,7 +101,7 @@ const NewPurchaseInvoiceView = () => {
     const [description, setDescription] = useState('');
     const [reference, setReference] = useState('');
     const [useManualRef, setUseManualRef] = useState(false);
-    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }]);
+    const [items, setItems] = useState([{ id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: 'No tax' }]);
     const [showOptionsArea, setShowOptionsArea] = useState(false);
     const [freightItems, setFreightItems] = useState([{ id: Date.now(), description: 'Freight / Shipping', amount: '0', taxCode: 'No tax' }]);
     const [importCosts, setImportCosts] = useState({
@@ -109,7 +109,9 @@ const NewPurchaseInvoiceView = () => {
         transport: '0',
         handling: '0',
         bankCharges: '0',
-        customsDuty: '0'
+        customsDuty: '0',
+        doubling: '0',
+        insurance: '0'
     });
     const [options, setOptions] = useState({
         amountsAreTaxInclusive: getDocumentDefaults().amountsAreTaxInclusive,
@@ -353,7 +355,9 @@ const NewPurchaseInvoiceView = () => {
             (parseFloat(importCosts.transport) || 0) +
             (parseFloat(importCosts.handling) || 0) +
             (parseFloat(importCosts.bankCharges) || 0) +
-            (parseFloat(importCosts.customsDuty) || 0);
+            (parseFloat(importCosts.customsDuty) || 0) +
+            (parseFloat((importCosts as any).doubling) || 0) +
+            (parseFloat((importCosts as any).insurance) || 0);
 
         const newTotalValue = subtotal > 0 ? subtotal : 1;
 
@@ -595,7 +599,7 @@ const NewPurchaseInvoiceView = () => {
                                     }} className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-200 transition-all">
                                         <Copy size={14} /> <span>Copy from Shipment</span>
                                     </button>
-                                    <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: DEFAULT_TAX_CODE }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
+                                    <button onClick={() => setItems(prev => [...prev, { id: Date.now(), item: 'Select Item', account: 'Inventory', description: '', qty: '1', unitPrice: '0', discount: '', taxCode: 'No tax' }])} className="flex items-center space-x-2 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-100 transition-all">
                                         <Plus size={14} /> <span>Add Row</span>
                                     </button>
                                 </div>
@@ -795,6 +799,8 @@ const NewPurchaseInvoiceView = () => {
                                             <InputField label="Handling" type="number" value={importCosts.handling} onChange={(e: any) => setImportCosts(prev => ({...prev, handling: e.target.value}))} />
                                             <InputField label="Bank Charges" type="number" value={importCosts.bankCharges} onChange={(e: any) => setImportCosts(prev => ({...prev, bankCharges: e.target.value}))} />
                                             <InputField label="Customs Duty" type="number" value={importCosts.customsDuty} onChange={(e: any) => setImportCosts(prev => ({...prev, customsDuty: e.target.value}))} />
+                                            <InputField label="Doubling Charges" type="number" value={(importCosts as any).doubling || ''} onChange={(e: any) => setImportCosts(prev => ({...prev, doubling: e.target.value}))} />
+                                            <InputField label="Insurance Charges" type="number" value={(importCosts as any).insurance || ''} onChange={(e: any) => setImportCosts(prev => ({...prev, insurance: e.target.value}))} />
                                         </div>
                                         {calculations.importCostsTotal > 0 && (
                                             <div className="bg-indigo-50 p-4 rounded-xl text-xs font-bold text-indigo-700 flex justify-between">

@@ -9,6 +9,7 @@ const ACCOUNT_SPECS = [
   { code: '2160', name: 'PAYE payable', accountType: 'Liability' },
   { code: '2161', name: 'NAPSA payable', accountType: 'Liability' },
   { code: '2162', name: 'NHIMA payable', accountType: 'Liability' },
+  { code: '2163', name: 'SDL payable', accountType: 'Liability' },
 ];
 
 async function ensureAccount(db: any, spec: { code: string; name: string; accountType: string }) {
@@ -70,20 +71,87 @@ export async function ensurePayrollTables(db: any) {
   for (const spec of ACCOUNT_SPECS) {
     accounts[spec.code] = await ensureAccount(db, spec);
   }
-  const count = await db.payslipItem.count();
-  if (count === 0) {
+  const existingItems = await db.payslipItem.findMany();
+  const existingNames = new Set(existingItems.map((i: any) => (i.name || '').toLowerCase()));
+  
+  if (existingItems.length === 0) {
     await db.payslipItem.createMany({
       data: [
         { name: 'Basic salary', itemType: 'earning', expenseAccountId: accounts['6100'].id },
+        { name: 'Housing allowance', itemType: 'earning', expenseAccountId: accounts['6100'].id },
+        { name: 'Transport allowance', itemType: 'earning', expenseAccountId: accounts['6100'].id },
         { name: 'PAYE', itemType: 'deduction', liabilityAccountId: accounts['2160'].id },
         { name: 'NAPSA employee', itemType: 'deduction', liabilityAccountId: accounts['2161'].id },
         { name: 'NHIMA employee', itemType: 'deduction', liabilityAccountId: accounts['2162'].id },
         { name: 'NAPSA employer', itemType: 'contribution', expenseAccountId: accounts['6110'].id, liabilityAccountId: accounts['2161'].id },
         { name: 'NHIMA employer', itemType: 'contribution', expenseAccountId: accounts['6110'].id, liabilityAccountId: accounts['2162'].id },
+        { name: 'SDL employer', itemType: 'contribution', expenseAccountId: accounts['6110'].id, liabilityAccountId: accounts['2163'].id },
       ],
     });
+  } else {
+    if (!existingNames.has('sdl employer')) {
+      await db.payslipItem.create({
+        data: { name: 'SDL employer', itemType: 'contribution', expenseAccountId: accounts['6110'].id, liabilityAccountId: accounts['2163'].id }
+      });
+    }
   }
   payrollReady = true;
+}
+
+export function calculateZambiaStatutory(grossPay: number) {
+  const gross = Math.max(0, Number(grossPay) || 0);
+
+  // NAPSA: 5% employee, 5% employer, capped at ZMW 1,492.00 (ceiling: 5% of 29,840)
+  const napsaCeiling = 1492.00;
+  const napsaEmployee = Math.min(round2(gross * 0.05), napsaCeiling);
+  const napsaEmployer = napsaEmployee;
+
+  // NHIMA: 1% employee, 1% employer
+  const nhimaEmployee = round2(gross * 0.01);
+  const nhimaEmployer = nhimaEmployee;
+
+  // SDL: 0.5% employer contribution on gross payroll
+  const sdlEmployer = round2(gross * 0.005);
+
+  // PAYE: Progressive bands (Zambia 2024+)
+  // 0 - 5,100: 0%
+  // 5,100.01 - 7,100 (next 2,000): 20%
+  // 7,100.01 - 9,200 (next 2,100): 30%
+  // > 9,200: 37%
+  let taxable = gross;
+  let paye = 0;
+  if (taxable > 5100) {
+    const band2 = Math.min(taxable - 5100, 2000);
+    paye += band2 * 0.20;
+  }
+  if (taxable > 7100) {
+    const band3 = Math.min(taxable - 7100, 2100);
+    paye += band3 * 0.30;
+  }
+  if (taxable > 9200) {
+    const band4 = taxable - 9200;
+    paye += band4 * 0.37;
+  }
+  paye = round2(paye);
+
+  const totalDeductions = round2(paye + napsaEmployee + nhimaEmployee);
+  const netPay = round2(gross - totalDeductions);
+  const totalEmployerContributions = round2(napsaEmployer + nhimaEmployer + sdlEmployer);
+  const totalEmployerCost = round2(gross + totalEmployerContributions);
+
+  return {
+    grossPay: gross,
+    paye,
+    napsaEmployee,
+    nhimaEmployee,
+    totalDeductions,
+    netPay,
+    napsaEmployer,
+    nhimaEmployer,
+    sdlEmployer,
+    totalEmployerContributions,
+    totalEmployerCost
+  };
 }
 
 function lineAmount(line: any) {
@@ -297,6 +365,160 @@ export function registerPayrollRoutes(app: Express, prisma: any) {
       await reverseJournal(prisma, req.params.id);
       await prisma.payslip.delete({ where: { id: req.params.id } });
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Statutory Deductions Calculator Endpoint
+  app.post('/api/payroll/calculate-statutory', (req, res) => {
+    try {
+      const grossPay = Number(req.body.grossPay || 0);
+      const result = calculateZambiaStatutory(grossPay);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Payslip Summary Report Endpoint
+  app.get('/api/reports/payslip-summary', async (req, res) => {
+    try {
+      await ensurePayrollTables(prisma);
+      const { from, to, employeeId } = req.query;
+
+      const where: any = {};
+      if (from || to) {
+        where.date = {};
+        if (from) where.date.gte = new Date(String(from));
+        if (to) where.date.lte = new Date(String(to));
+      }
+      if (employeeId) {
+        where.employeeId = String(employeeId);
+      }
+
+      const payslips = await prisma.payslip.findMany({
+        where,
+        include: {
+          employee: true,
+          lines: { include: { item: true } }
+        },
+        orderBy: [{ date: 'desc' }, { reference: 'desc' }]
+      });
+
+      const rows = payslips.map((slip: any) => {
+        let basicPay = 0;
+        let allowances = 0;
+        let grossPay = Number(slip.grossPay || 0);
+        let paye = 0;
+        let napsaEE = 0;
+        let nhimaEE = 0;
+        let otherDeductions = 0;
+        let totalDeductions = Number(slip.deduction || 0);
+        let netPay = Number(slip.netPay || 0);
+        let napsaER = 0;
+        let nhimaER = 0;
+        let sdlER = 0;
+        let totalER = Number(slip.contribution || 0);
+
+        for (const line of slip.lines || []) {
+          const amt = Number(line.amount || 0);
+          const name = ((line.item?.name || '') + ' ' + (line.description || '')).toLowerCase();
+          const type = line.lineType;
+
+          if (type === 'earning') {
+            if (name.includes('basic') || basicPay === 0) {
+              basicPay += amt;
+            } else {
+              allowances += amt;
+            }
+          } else if (type === 'deduction') {
+            if (name.includes('paye')) {
+              paye += amt;
+            } else if (name.includes('napsa')) {
+              napsaEE += amt;
+            } else if (name.includes('nhima')) {
+              nhimaEE += amt;
+            } else {
+              otherDeductions += amt;
+            }
+          } else if (type === 'contribution') {
+            if (name.includes('napsa')) {
+              napsaER += amt;
+            } else if (name.includes('nhima')) {
+              nhimaER += amt;
+            } else if (name.includes('sdl')) {
+              sdlER += amt;
+            }
+          }
+        }
+
+        if (basicPay === 0 && grossPay > 0) basicPay = grossPay;
+
+        return {
+          id: slip.id,
+          date: slip.date,
+          reference: slip.reference,
+          employeeId: slip.employee?.id,
+          employeeName: slip.employee?.name || 'Unknown',
+          employeeCode: slip.employee?.code || '',
+          nrc: slip.employee?.nrc || '',
+          tpin: slip.employee?.tpin || '',
+          department: slip.employee?.department || '',
+          basicPay: round2(basicPay),
+          allowances: round2(allowances),
+          grossPay: round2(grossPay),
+          paye: round2(paye),
+          napsaEmployee: round2(napsaEE),
+          nhimaEmployee: round2(nhimaEE),
+          otherDeductions: round2(otherDeductions),
+          totalDeductions: round2(totalDeductions),
+          netPay: round2(netPay),
+          napsaEmployer: round2(napsaER),
+          nhimaEmployer: round2(nhimaER),
+          sdlEmployer: round2(sdlER),
+          totalEmployerContributions: round2(totalER),
+          totalEmployerCost: round2(grossPay + totalER),
+        };
+      });
+
+      const totals = rows.reduce(
+        (acc: any, r: any) => {
+          acc.basicPay = round2(acc.basicPay + r.basicPay);
+          acc.allowances = round2(acc.allowances + r.allowances);
+          acc.grossPay = round2(acc.grossPay + r.grossPay);
+          acc.paye = round2(acc.paye + r.paye);
+          acc.napsaEmployee = round2(acc.napsaEmployee + r.napsaEmployee);
+          acc.nhimaEmployee = round2(acc.nhimaEmployee + r.nhimaEmployee);
+          acc.otherDeductions = round2(acc.otherDeductions + r.otherDeductions);
+          acc.totalDeductions = round2(acc.totalDeductions + r.totalDeductions);
+          acc.netPay = round2(acc.netPay + r.netPay);
+          acc.napsaEmployer = round2(acc.napsaEmployer + r.napsaEmployer);
+          acc.nhimaEmployer = round2(acc.nhimaEmployer + r.nhimaEmployer);
+          acc.sdlEmployer = round2(acc.sdlEmployer + r.sdlEmployer);
+          acc.totalEmployerContributions = round2(acc.totalEmployerContributions + r.totalEmployerContributions);
+          acc.totalEmployerCost = round2(acc.totalEmployerCost + r.totalEmployerCost);
+          return acc;
+        },
+        {
+          basicPay: 0,
+          allowances: 0,
+          grossPay: 0,
+          paye: 0,
+          napsaEmployee: 0,
+          nhimaEmployee: 0,
+          otherDeductions: 0,
+          totalDeductions: 0,
+          netPay: 0,
+          napsaEmployer: 0,
+          nhimaEmployer: 0,
+          sdlEmployer: 0,
+          totalEmployerContributions: 0,
+          totalEmployerCost: 0,
+        }
+      );
+
+      res.json({ rows, totals, count: rows.length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

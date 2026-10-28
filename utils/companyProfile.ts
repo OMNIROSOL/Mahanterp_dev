@@ -10,10 +10,10 @@ export type CompanyProfile = {
 
 export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
   name: 'Mahant Investments Limited',
-  address: 'Lusaka, Zambia',
-  tpin: '',
-  phone: '',
-  email: '',
+  address: 'Plot 5254, Mukwa Road, Heavy Industrial Area, Lusaka, Zambia',
+  tpin: '1001849201',
+  phone: '+260 211 287188 / +260 977 770246',
+  email: 'info@mahantinvestments.com',
 };
 
 export function getCompanyProfile(): CompanyProfile {

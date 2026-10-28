@@ -264,6 +264,19 @@ const NewSalesInvoiceView = () => {
         return reason.trim();
     }, [items, inventoryMap, getMinSellingPrice, exchangeRate]);
 
+    const calculatedDueDateFormatted = useMemo(() => {
+        if (!issueDate) return '';
+        const d = new Date(issueDate);
+        if (isNaN(d.getTime())) return '';
+        if (dueDateType === 'Net') {
+            d.setDate(d.getDate() + (parseInt(dueDateDays) || 0));
+        }
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}.${month}.${year}`;
+    }, [issueDate, dueDateType, dueDateDays]);
+
     const fetchReference = async () => {
         try {
             const nextRef = await apiService.getNextReference('invoice');
@@ -366,7 +379,7 @@ const NewSalesInvoiceView = () => {
                         }
                         setBillingAddress(sourceDoc.billingAddress || sourceDoc.customer?.billingAddress || '');
 
-                        if (copyFromId) {
+                        if (copyFromId || !sourceDoc.reference || sourceDoc.reference.startsWith('SQ-') || sourceDoc.reference.startsWith('SO-')) {
                             fetchReference();
                             setUseManualRef(false);
                         } else {
@@ -759,6 +772,10 @@ const NewSalesInvoiceView = () => {
                                         />
                                     )}
                                 </div>
+                                <div className="text-[11px] font-bold text-indigo-600 flex items-center gap-1.5 pt-0.5">
+                                    <span>Due: {calculatedDueDateFormatted}</span>
+                                    <span className="text-slate-400 font-normal">({dueDateType === 'Net' ? `Issue + ${dueDateDays || 0}d` : 'On receipt'})</span>
+                                </div>
                             </div>
 
                             <div className="space-y-2">
@@ -820,6 +837,10 @@ const NewSalesInvoiceView = () => {
                                     setBillingAddress(selected.billingAddress || '');
                                     setTpin(selected.tpin || '');
                                     if (selected.division) setDivision(selected.division);
+                                    if (selected.creditDays !== undefined && selected.creditDays !== null) {
+                                        setDueDateDays(String(selected.creditDays));
+                                        setDueDateType('Net');
+                                    }
                                 }
                             }} Icon={User}>
                                 <option value="">Select Target Customer...</option>

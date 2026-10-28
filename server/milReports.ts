@@ -12,7 +12,7 @@ function iso(d: any) {
   return dt.toISOString().slice(0, 10);
 }
 
-function daysBetween(from: any, to = new Date()) {
+function daysBetween(from: any, to: any = new Date()) {
   const a = new Date(iso(from) + 'T00:00:00Z').getTime();
   const b = new Date(iso(to) + 'T00:00:00Z').getTime();
   if (!a || !b) return 0;
@@ -77,7 +77,7 @@ async function stockPositions(db: any) {
     db.goodsReceivedNoteItem.findMany({ include: { goodsReceivedNote: { include: { supplier: true } }, item: true } }),
     db.procurementPriceHistory.findMany({ include: { supplier: true }, orderBy: { purchaseDate: 'desc' } }),
   ]);
-  const byItem = new Map(items.map((item: any) => [item.id, item]));
+  const byItem = new Map<string, any>(items.map((item: any) => [item.id, item]));
   const qty = new Map<string, number>();
   for (const row of ledger) {
     const branch = row.location?.name || 'Unassigned';
@@ -403,7 +403,7 @@ export function registerMilReportRoutes(app: Express, prisma: any) {
         agg.set(line.itemId, cur);
       }
       const months = Math.max(1, daysBetween(from, to) / 30);
-      let rows = Array.from(agg.values())
+      let rows: any[] = Array.from(agg.values())
         .map((row) => {
           const onHand = stockQty.get(row.itemId) || 0;
           const monthly = row.qty / months;
@@ -651,8 +651,8 @@ export function registerMilReportRoutes(app: Express, prisma: any) {
         prisma.invoices.findMany({ include: { suppliers: true } }),
         prisma.shipment.findMany(),
       ]);
-      const invoiceOf = new Map(invoices.map((row: any) => [row.id, row]));
-      const shipmentOf = new Map(shipments.map((row: any) => [row.id, row]));
+      const invoiceOf = new Map<string, any>(invoices.map((row: any) => [row.id, row]));
+      const shipmentOf = new Map<string, any>(shipments.map((row: any) => [row.id, row]));
       const previous = new Map<string, number>();
       const lines = rowsRaw.map((row: any) => {
         const qty = n(row.receivedQty) || 1;
@@ -736,7 +736,7 @@ export function registerMilReportRoutes(app: Express, prisma: any) {
         openPipeline(prisma),
         prisma.suppliers.findMany(),
       ]);
-      const supplierByName = new Map(suppliers.map((row: any) => [String(row.name || '').toLowerCase(), row]));
+      const supplierByName = new Map<string, any>(suppliers.map((row: any) => [String(row.name || '').toLowerCase(), row]));
       const sold = new Map<string, number>();
       for (const line of lines) {
         if (!inRange(line.invoice.issueDate, from, iso(new Date()))) continue;

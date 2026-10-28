@@ -249,6 +249,20 @@ export const FinancialStatements: React.FC<{
   const sum = (list: StatementAccount[]) => list.reduce((acc, item) => acc + (item.balance || 0), 0);
   const netProfit = sum(income) - sum(expenses);
 
+  const equityList: StatementAccount[] = [
+    ...equity,
+    ...(Math.abs(netProfit) > 0.005 || equity.length === 0 ? [{
+      id: 'current-period-earnings',
+      name: 'Current Period Earnings',
+      code: '3999',
+      balance: netProfit,
+      currency: 'ZMW',
+      accountType: 'Equity',
+      type: 'Equity',
+    } as StatementAccount] : []),
+  ];
+  const totalEquity = sum(equity) + netProfit;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-8 items-start">
       <section>
@@ -267,13 +281,15 @@ export const FinancialStatements: React.FC<{
             total={sum(liabilities)}
             groups={buildGroups(liabilities, liabilityGroup, LIABILITY_GROUP_ORDER)}
           />
-          {equity.length > 0 && (
-            <StatementCard
-              title="Equity"
-              total={sum(equity)}
-              groups={buildGroups(equity, () => null)}
-            />
-          )}
+          <StatementCard
+            title="Equity"
+            total={totalEquity}
+            groups={buildGroups(equityList, () => null)}
+          />
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-6 py-3 flex items-center justify-between text-xs font-bold text-slate-600">
+            <span>Net Assets (Assets − Liabilities)</span>
+            <span className="tabular-nums font-black text-slate-800">{formatHeaderAmount(sum(assets) - sum(liabilities))}</span>
+          </div>
         </div>
       </section>
 

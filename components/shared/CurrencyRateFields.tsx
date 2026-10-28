@@ -6,9 +6,10 @@ type Props = {
   currency: string;
   exchangeRate: number | string;
   currencies?: { code: string; name?: string }[];
-  onCurrencyChange: (code: string) => void;
-  onRateChange: (rate: number) => void;
+  onCurrencyChange?: (code: string) => void;
+  onRateChange?: (rate: number) => void;
   className?: string;
+  readOnlyCurrency?: boolean;
 };
 
 const FALLBACK = [
@@ -26,6 +27,7 @@ export function CurrencyRateFields({
   onCurrencyChange,
   onRateChange,
   className,
+  readOnlyCurrency = true,
 }: Props) {
   const code = currencyCode(currency);
   const options = (currencies && currencies.length ? currencies : FALLBACK).map((c) => ({
@@ -38,41 +40,52 @@ export function CurrencyRateFields({
   const baseLocked = isBaseCurrency(code);
 
   return (
-    <div className={className || 'grid grid-cols-1 md:grid-cols-2 gap-6'}>
+    <div className={className || (baseLocked ? 'grid grid-cols-1 md:grid-cols-2 gap-6' : 'grid grid-cols-1 md:grid-cols-2 gap-6')}>
       <div className="space-y-2">
         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Currency</label>
         <div className="relative group">
-          <Coins size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500" />
-          <select
-            value={code}
-            onChange={(e) => onCurrencyChange(currencyCode(e.target.value))}
-            className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-5 py-3 text-[13px] font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 cursor-pointer"
-          >
-            {options.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code}{c.name && c.name !== c.code ? ` — ${c.name}` : ''}
-              </option>
-            ))}
-          </select>
+          <Coins size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          {readOnlyCurrency ? (
+            <div className="w-full bg-slate-100/80 border border-slate-200 rounded-2xl pl-11 pr-5 py-3 text-[13px] font-black text-slate-700 flex items-center justify-between">
+              <span>{code}</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400">
+                {baseLocked ? 'Base Currency' : 'Foreign Currency'}
+              </span>
+            </div>
+          ) : (
+            <select
+              value={code}
+              onChange={(e) => onCurrencyChange && onCurrencyChange(currencyCode(e.target.value))}
+              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-5 py-3 text-[13px] font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 cursor-pointer"
+            >
+              {options.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code}{c.name && c.name !== c.code ? ` — ${c.name}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
-      <div className="space-y-2">
-        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
-          Exchange rate (1 {code} = {BASE_CURRENCY})
-        </label>
-        <div className="relative group">
-          <RefreshCcw size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500" />
-          <input
-            type="number"
-            step="0.0001"
-            min="0"
-            value={baseLocked ? 1 : exchangeRate}
-            readOnly={baseLocked}
-            onChange={(e) => onRateChange(parseFloat(e.target.value) || 0)}
-            className={`w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-5 py-3 text-[13px] font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 ${baseLocked ? 'opacity-60 cursor-not-allowed bg-slate-100' : ''}`}
-          />
+      {!baseLocked && (
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+            Exchange rate (1 {code} = ___ {BASE_CURRENCY})
+          </label>
+          <div className="relative group">
+            <RefreshCcw size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500" />
+            <input
+              type="number"
+              step="0.0001"
+              min="0"
+              value={exchangeRate}
+              onChange={(e) => onRateChange && onRateChange(parseFloat(e.target.value) || 0)}
+              placeholder="e.g. 18.83"
+              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-5 py-3 text-[13px] font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500"
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { AppUser } from '../../types';
+import { apiService } from '../../services/apiService';
 
 // TODO: Replace with real auth service
 const getCurrentUserFallback = (): AppUser => ({
@@ -39,13 +40,20 @@ const getCurrentUserFallback = (): AppUser => ({
   avatar: 'A'
 });
 
+interface SubmenuItem {
+  label: string;
+  path: string;
+  id?: string;
+  count?: number;
+}
+
 interface SidebarItemProps {
   icon: React.ElementType;
   label: string;
   path: string;
   isCollapsed: boolean;
   count?: number;
-  submenu?: { label: string; path: string }[];
+  submenu?: SubmenuItem[];
 }
 
 const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, path, isCollapsed, count, submenu }) => {
@@ -68,11 +76,11 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, path, isCo
         {!isCollapsed && (
           <div className="flex-1 flex items-center justify-between overflow-hidden">
             <span className="font-medium whitespace-nowrap">{label}</span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               {count !== undefined && count > 0 && (
                 <span className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-bold",
-                  path === '/approvals' ? "bg-red-500/10 text-red-400" : "bg-primary/10 text-primary"
+                  "text-[10px] px-2 py-0.5 rounded-full font-bold transition-colors",
+                  path === '/approvals' ? "bg-red-500/10 text-red-400" : "bg-slate-800 text-slate-300 group-hover:bg-primary/20 group-hover:text-primary border border-slate-700/60"
                 )}>
                   {count}
                 </span>
@@ -97,11 +105,16 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, path, isCo
               key={index}
               to={item.path}
               className={({ isActive }) => cn(
-                "text-sm py-1.5 px-3 rounded-md transition-colors",
-                isActive ? "text-white font-medium bg-primary/20" : "text-slate-500 hover:text-white hover:bg-slate-800"
+                "text-sm py-1.5 px-3 rounded-md transition-colors flex items-center justify-between group/sub",
+                isActive ? "text-white font-medium bg-primary/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
               )}
             >
-              {item.label}
+              <span className="truncate">{item.label}</span>
+              {item.count !== undefined && item.count > 0 && (
+                <span className="ml-2 text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-slate-800/80 text-slate-300 group-hover/sub:bg-primary/20 group-hover/sub:text-primary transition-colors border border-slate-700/40">
+                  {item.count}
+                </span>
+              )}
             </NavLink>
           ))}
         </motion.div>
@@ -117,6 +130,26 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
   const [currentUser, setCurrentUser] = useState<AppUser>(getCurrentUserFallback());
+  const [counts, setCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCounts = async () => {
+      try {
+        const data = await apiService.getCounts();
+        if (isMounted && data) setCounts(data);
+      } catch (err) {
+        // Silently tolerate count load failures
+      }
+    };
+
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     // Keep for potential future storage-based auth updates
@@ -148,16 +181,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       icon: Receipt,
       path: '/summary',
       id: 'summary',
+      count: counts.accounting,
       submenu: [
         { label: 'Summary', path: '/summary', id: 'summary' },
-        { label: 'Bank and Cash Accounts', path: '/account', id: 'bank-accounts' },
+        { label: 'Bank and Cash Accounts', path: '/account', id: 'bank-accounts', count: counts.bankAccounts },
         { label: 'Bank Reconciliation', path: '/bank-reconciliation', id: 'bank-reconciliation' },
-        { label: 'Receipts', path: '/receipts', id: 'receipts' },
-        { label: 'Payments', path: '/payments', id: 'payments' },
-        { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers' },
-        { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims' },
-        { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers' },
-        { label: 'Payslips', path: '/payslips', id: 'payslips' },
+        { label: 'Receipts', path: '/receipts', id: 'receipts', count: counts.receipts },
+        { label: 'Payments', path: '/payments', id: 'payments', count: counts.payments },
+        { label: 'Inter Account Transfers', path: '/inter-account-transfers', id: 'inter-account-transfers', count: counts.interAccountTransfers },
+        { label: 'Expense Claims', path: '/expense-claims', id: 'expense-claims', count: counts.expenseClaims },
+        { label: 'Expense Claim Payers', path: '/expense-claim-payers', id: 'expense-claim-payers', count: counts.expenseClaimPayers },
+        { label: 'Payslips', path: '/payslips', id: 'payslips', count: counts.payslips },
+        { label: 'Journal Entries', path: '/journal-entries', id: 'journal-entries', count: counts.journalEntries },
+        { label: 'Fixed Assets', path: '/fixed-assets', id: 'fixed-assets', count: counts.fixedAssets },
+        { label: 'Depreciation Entries', path: '/depreciation-entries', id: 'depreciation-entries' },
       ]
     },
     {
@@ -165,10 +202,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       icon: Database,
       path: '/master/income-items',
       id: 'master',
+      count: counts.master,
       submenu: [
         { label: 'Income Items', path: '/master/income-items', id: 'income-items' },
         { label: 'Expense Items', path: '/master/expense-items', id: 'expense-items' },
-        { label: 'Employees', path: '/employees', id: 'employees' },
+        { label: 'Employees', path: '/employees', id: 'employees', count: counts.employees },
         { label: 'Units of Measure', path: '/master/units', id: 'units' },
         { label: 'Item Categories', path: '/master/categories', id: 'categories' },
       ]
@@ -179,15 +217,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       icon: ShoppingCart,
       path: '/sales-history',
       id: 'sales-invoices',
+      count: counts.sales,
       submenu: [
         { label: 'Sales Dashboard', path: '/sales-dashboard', id: 'sales-dashboard' },
-        { label: 'Customers', path: '/customers', id: 'customers' },
+        { label: 'Customers', path: '/customers', id: 'customers', count: counts.customers },
+        { label: 'Customer Statements', path: '/customers/statement', id: 'customers' },
         { label: 'Sales History', path: '/sales-history', id: 'sales-invoices' },
-        { label: 'Sales Quotes', path: '/sales-quotes', id: 'sales-quotes' },
-        { label: 'Sales Orders', path: '/sales-orders', id: 'sales-orders' },
-        { label: 'Sales Invoices', path: '/sales-invoices', id: 'sales-invoices' },
-        { label: 'Delivery Notes', path: '/delivery-notes', id: 'delivery-notes' },
-        { label: 'Credit Notes', path: '/credit-notes', id: 'credit-notes' },
+        { label: 'Sales Quotes', path: '/sales-quotes', id: 'sales-quotes', count: counts.salesQuotes },
+        { label: 'Sales Orders', path: '/sales-orders', id: 'sales-orders', count: counts.salesOrders },
+        { label: 'Sales Invoices', path: '/sales-invoices', id: 'sales-invoices', count: counts.salesInvoices },
+        { label: 'Delivery Notes', path: '/delivery-notes', id: 'delivery-notes', count: counts.deliveryNotes },
+        { label: 'Credit Notes', path: '/credit-notes', id: 'credit-notes', count: counts.creditNotes },
       ]
     },
     {
@@ -195,21 +235,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       icon: ShoppingCart,
       path: '/purchase-history',
       id: 'purchase-history',
+      count: counts.purchase,
       submenu: [
         { label: 'Purchase Dashboard', path: '/purchase/analytics', id: 'purchase-history' },
         { label: 'Purchase History', path: '/purchase-history', id: 'purchase-history' },
-        { label: 'Suppliers', path: '/suppliers', id: 'suppliers' },
+        { label: 'Suppliers', path: '/suppliers', id: 'suppliers', count: counts.suppliers },
+        { label: 'Supplier Statements', path: '/suppliers/statement', id: 'suppliers' },
         { label: 'Supplier Catalog Setup', path: '/purchase/supplier-catalog', id: 'supplier-catalog-setup' },
         { label: 'Purchase Planning', path: '/purchase/planning', id: 'purchase-planning' },
-        { label: 'Purchase Enquiry', path: '/purchase-quotes', id: 'purchase-quotes' },
+        { label: 'Purchase Enquiry', path: '/purchase-quotes', id: 'purchase-quotes', count: counts.purchaseQuotes },
         { label: 'Quote Analysis', path: '/purchase/quote-analysis', id: 'quote-analysis' },
-        { label: 'Purchase Orders', path: '/purchase-orders', id: 'purchase-orders' },
+        { label: 'Purchase Orders', path: '/purchase-orders', id: 'purchase-orders', count: counts.purchaseOrders },
         { label: 'Incoming Shipments', path: '/purchase/incoming-shipments', id: 'purchase-history' },
         { label: 'Shipment Planner', path: '/shipment-planner', id: 'purchase-history' },
         { label: 'Landed Cost Calculator', path: '/purchase/costing-reports', id: 'purchase-orders' },
-        { label: 'Purchase Invoices', path: '/purchase-invoices', id: 'purchase-invoices' },
-        { label: 'Goods Received Notes', path: '/goods-received-notes', id: 'goods-received-notes' },
-        { label: 'Debit Notes', path: '/debit-notes', id: 'debit-notes' },
+        { label: 'Purchase Invoices', path: '/purchase-invoices', id: 'purchase-invoices', count: counts.purchaseInvoices },
+        { label: 'Goods Received Notes', path: '/goods-received-notes', id: 'goods-received-notes', count: counts.goodsReceivedNotes },
+        { label: 'Debit Notes', path: '/debit-notes', id: 'debit-notes', count: counts.debitNotes },
       ]
     },
     {
@@ -217,11 +259,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, setIsCollapsed }) => {
       icon: Package,
       path: '/inventory-items',
       id: 'inventory-items',
+      count: counts.inventory,
       submenu: [
         { label: 'Inventory Dashboard', path: '/purchase/consumption', id: 'inventory-items' },
-        { label: 'Inventory Items', path: '/inventory-items', id: 'inventory-items' },
-        { label: 'Inventory Transfers', path: '/inventory-transfers', id: 'inventory-transfers' },
-        { label: 'Inventory Write-offs', path: '/inventory-write-offs', id: 'inventory-write-offs' },
+        { label: 'Inventory Items', path: '/inventory-items', id: 'inventory-items', count: counts.inventoryItems },
+        { label: 'Inventory Transfers', path: '/inventory-transfers', id: 'inventory-transfers', count: counts.inventoryTransfers },
+        { label: 'Inventory Write-offs', path: '/inventory-write-offs', id: 'inventory-write-offs', count: counts.inventoryWriteOffs },
         ...(isAdmin ? [{ label: 'Inventory Unit Costs', path: '/settings/inventory-unit-costs', id: 'inventory-unit-costs' }] : []),
       ].filter(sub => !sub.id || hasViewRight(sub.id))
     },

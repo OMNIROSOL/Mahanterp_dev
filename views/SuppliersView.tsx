@@ -89,6 +89,7 @@ const SuppliersView = () => {
     const defaultColumns = [
         { id: 'name', label: 'Supplier Name', visible: true },
         { id: 'code', label: 'Supplier Code', visible: true },
+        { id: 'tpin', label: 'TPIN', visible: true },
         { id: 'division', label: 'Division', visible: true },
         { id: 'email', label: 'Email address', visible: false },
         { id: 'address', label: 'Address', visible: false },

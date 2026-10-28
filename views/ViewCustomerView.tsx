@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Eye, Edit, ChevronRight, LayoutGrid, Printer, FileText, Mail, Copy, ChevronLeft, ChevronsLeft, ChevronsRight, FolderOpen } from 'lucide-react';
+import { Eye, Edit, ChevronRight, LayoutGrid, Printer, FileText, Mail, Copy, ChevronLeft, ChevronsLeft, ChevronsRight, FolderOpen, FileSpreadsheet } from 'lucide-react';
 import { Customer } from '../types';
 import apiService from '../services/apiService';
 import { DualAmount } from '../components/shared/CurrencyRateFields';
@@ -147,6 +147,12 @@ const ViewCustomerView = () => {
                     <div className="w-[1px] h-6 bg-gray-200 mx-3"></div>
 
                     <div className="flex space-x-2">
+                        <button
+                            onClick={() => navigate(`/customers/statement/${customer.id}`)}
+                            className="bg-indigo-50 border border-indigo-200 px-4 py-1.5 text-[12px] font-bold text-indigo-700 rounded shadow-sm hover:bg-indigo-100 flex items-center gap-2"
+                        >
+                            <FileSpreadsheet size={14} /> Statement
+                        </button>
                         <button onClick={() => navigate(`/customers/print-batch?ids=${customer.id}`)} className="bg-white border border-gray-300 px-4 py-1.5 text-[12px] font-bold text-gray-700 rounded shadow-sm hover:bg-gray-50 flex items-center gap-2">
                             <Printer size={14} /> Print
                         </button>

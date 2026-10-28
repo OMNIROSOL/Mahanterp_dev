@@ -73,7 +73,7 @@ const ViewDebitNoteView = () => {
 
     const cnIndex = debitNotes.findIndex(c => c.id === id || c.id === `dn-${id}` || c.id.toString() === id);
 
-    const entityEmail = entityData?.email || (debitNote ? `${(debitNote.customer?.name || debitNote.supplier?.name || '').toLowerCase().replace(/\s+/g, '.')}@example.com` : '');
+    const entityEmail = entityData?.email || '';
 
     const totals = useMemo(() => {
         if (!debitNote) return { subtotal: 0, tax: 0, total: 0, costOfSales: 0 };

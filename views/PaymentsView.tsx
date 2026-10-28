@@ -41,6 +41,7 @@ const PaymentsView = () => {
         { id: 'reference', label: 'Reference', visible: true },
         { id: 'paidToContact', label: 'Paid to', visible: true },
         { id: 'paidFromAccount', label: 'Paid from', visible: true },
+        { id: 'division', label: 'Division', visible: true },
         { id: 'description', label: 'Description', visible: true },
         { id: 'amount', label: 'Total amount', visible: true },
         { id: 'status', label: 'Status', visible: true },
@@ -157,7 +158,7 @@ const PaymentsView = () => {
                         <span className="text-gray-400">Financial Records</span>
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 leading-tight tracking-tight">Payments</h1>
-                    <p className="text-gray-500 text-sm">Manage and track your incoming payments</p>
+                    <p className="text-gray-500 text-sm">Manage and track your outgoing payments</p>
                 </div>
                 {!customerName && (
                     <div className="flex bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl shadow-sm items-center gap-6 animate-in slide-in-from-top-4 duration-500">
@@ -165,7 +166,7 @@ const PaymentsView = () => {
                             <PaymentIcon size={20} />
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-0.5">Grand Total Received</span>
+                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-0.5">Grand Total Paid Out</span>
                             <div className="flex items-baseline gap-2">
                                 <span className="text-2xl font-black text-slate-900 tracking-tighter">ZMW {totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                 <span className="text-[10px] font-bold text-slate-400">across {filteredPayments.length} records</span>
@@ -350,14 +351,24 @@ const PaymentsView = () => {
                                 <td className="px-6 py-4 text-center font-black text-[10px] text-slate-400 uppercase tracking-widest italic">Grand Totals:</td>
                                 {columns.filter(c => c.visible).map(col => {
                                     if (col.id === 'amount') {
+                                        const totalsByCur: Record<string, number> = {};
+                                        filteredPayments.forEach(p => {
+                                            const cur = p.currency || 'ZMW';
+                                            totalsByCur[cur] = (totalsByCur[cur] || 0) + (parseFloat(String(p.amount)) || 0);
+                                        });
+                                        const activeCurs = Object.keys(totalsByCur);
+
                                         return (
                                             <td key={col.id} className="px-6 py-4 text-right whitespace-nowrap border-l border-slate-200/20">
-                                                <div className="flex flex-col items-end">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight mb-0.5">Total Amount</span>
-                                                    <span className="text-[15px] font-black text-slate-900 tracking-tighter underline decoration-slate-200 decoration-2 underline-offset-4">
-                                                        <span className="text-[10px] text-slate-400 font-bold mr-1">ZMW</span>
-                                                        {totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                    </span>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    {activeCurs.map(cur => (
+                                                        <div key={cur} className="flex items-center gap-1.5 justify-end">
+                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">{cur}</span>
+                                                            <span className="text-[13px] font-black text-slate-900 tracking-tight underline decoration-slate-200 decoration-2 underline-offset-4">
+                                                                {totalsByCur[cur].toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </td>
                                         );

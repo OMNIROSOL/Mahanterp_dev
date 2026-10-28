@@ -40,6 +40,7 @@ const ReceiptsView = () => {
         { id: 'reference', label: 'Reference', visible: true },
         { id: 'paidByContact', label: 'Paid by', visible: true },
         { id: 'receivedInAccount', label: 'Received in', visible: true },
+        { id: 'division', label: 'Division', visible: true },
         { id: 'description', label: 'Description', visible: true },
         { id: 'amount', label: 'Total amount', visible: true },
         { id: 'status', label: 'Status', visible: true },
@@ -350,14 +351,24 @@ const ReceiptsView = () => {
                                 <td className="px-6 py-4 text-center font-black text-[10px] text-slate-400 uppercase tracking-widest italic">Grand Totals:</td>
                                 {columns.filter(c => c.visible).map(col => {
                                     if (col.id === 'amount') {
+                                        const totalsByCur: Record<string, number> = {};
+                                        filteredReceipts.forEach(r => {
+                                            const cur = r.currency || 'ZMW';
+                                            totalsByCur[cur] = (totalsByCur[cur] || 0) + (parseFloat(String(r.amount)) || 0);
+                                        });
+                                        const activeCurs = Object.keys(totalsByCur);
+
                                         return (
                                             <td key={col.id} className="px-6 py-4 text-right whitespace-nowrap border-l border-slate-200/20">
-                                                <div className="flex flex-col items-end">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight mb-0.5">Total Amount</span>
-                                                    <span className="text-[15px] font-black text-slate-900 tracking-tighter underline decoration-slate-200 decoration-2 underline-offset-4">
-                                                        <span className="text-[10px] text-slate-400 font-bold mr-1">ZMW</span>
-                                                        {totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                    </span>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    {activeCurs.map(cur => (
+                                                        <div key={cur} className="flex items-center gap-1.5 justify-end">
+                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">{cur}</span>
+                                                            <span className="text-[13px] font-black text-slate-900 tracking-tight underline decoration-slate-200 decoration-2 underline-offset-4">
+                                                                {totalsByCur[cur].toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </td>
                                         );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Eye, Edit, ChevronRight, LayoutGrid, Printer, FileText, Mail, Copy, ChevronLeft, ChevronsLeft, ChevronsRight, FolderOpen, Building2, ChevronDown } from 'lucide-react';
+import { Eye, Edit, ChevronRight, LayoutGrid, Printer, FileText, Mail, Copy, ChevronLeft, ChevronsLeft, ChevronsRight, FolderOpen, Building2, ChevronDown, FileSpreadsheet } from 'lucide-react';
 import apiService from '../services/apiService';
 import { Supplier } from '../types';
 import { DualAmount } from '../components/shared/CurrencyRateFields';
@@ -137,6 +137,12 @@ const ViewSupplierView = () => {
                     <div className="w-[1px] h-6 bg-gray-200 mx-3"></div>
 
                     <div className="flex space-x-2">
+                        <button
+                            onClick={() => navigate(`/suppliers/statement/${supplier.id}`)}
+                            className="bg-indigo-50 border border-indigo-200 px-4 py-1.5 text-[12px] font-bold text-indigo-700 rounded shadow-sm hover:bg-indigo-100 flex items-center gap-2"
+                        >
+                            <FileSpreadsheet size={14} /> Statement
+                        </button>
                         <button onClick={() => navigate(`/suppliers/print-batch?ids=${supplier.id}`)} className="bg-white border border-gray-300 px-4 py-1.5 text-[12px] font-bold text-gray-700 rounded shadow-sm hover:bg-gray-50 flex items-center gap-2">
                             <Printer size={14} /> Print
                         </button>
@@ -209,6 +215,12 @@ const ViewSupplierView = () => {
                                     <span className="w-32 text-gray-500">Division:</span>
                                     <span className="font-medium">{supplier.division || 'General'}</span>
                                 </div>
+                                {supplier.tpin && (
+                                    <div className="flex">
+                                        <span className="w-32 text-gray-500">TPIN:</span>
+                                        <span className="font-medium font-mono">{supplier.tpin}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -219,9 +231,62 @@ const ViewSupplierView = () => {
                                     <span className="w-32 text-gray-500">Currency:</span>
                                     <span className="font-medium">{supplier.currency || 'ZMW'}</span>
                                 </div>
+                                <div className="flex">
+                                    <span className="w-32 text-gray-500">Control Account:</span>
+                                    <span className="font-medium">{supplier.controlAccount || 'Accounts Payable'}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    {/* Bank Details & Product Categories */}
+                    {(() => {
+                        const banks = (supplier.bankDetails || (supplier as any).bank_details) as any;
+                        const cats = (supplier.productCategories || (supplier as any).product_categories) as string[];
+                        return (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-10">
+                                <div>
+                                    <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-100 pb-2">Banking Details</h3>
+                                    {banks && (banks.bankName || banks.accountNumber) ? (
+                                        <div className="space-y-2 text-xs">
+                                            {banks.bankName && (
+                                                <div className="flex"><span className="w-32 text-gray-500">Bank:</span><span className="font-semibold text-slate-800">{banks.bankName}</span></div>
+                                            )}
+                                            {banks.accountName && (
+                                                <div className="flex"><span className="w-32 text-gray-500">Account Name:</span><span className="font-medium">{banks.accountName}</span></div>
+                                            )}
+                                            {banks.accountNumber && (
+                                                <div className="flex"><span className="w-32 text-gray-500">Account No:</span><span className="font-mono font-bold text-slate-900">{banks.accountNumber}</span></div>
+                                            )}
+                                            {banks.swiftCode && (
+                                                <div className="flex"><span className="w-32 text-gray-500">SWIFT / BIC:</span><span className="font-mono">{banks.swiftCode}</span></div>
+                                            )}
+                                            {banks.branchName && (
+                                                <div className="flex"><span className="w-32 text-gray-500">Branch:</span><span>{banks.branchName}</span></div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-gray-400 italic">No bank details recorded</p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-100 pb-2">Supplied Categories</h3>
+                                    {cats && Array.isArray(cats) && cats.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5 pt-1">
+                                            {cats.map((c: string) => (
+                                                <span key={c} className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md text-[11px] font-bold">
+                                                    {c}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-gray-400 italic">No categories assigned</p>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     <div className="grid grid-cols-1 gap-12 mb-10">
                         <div>

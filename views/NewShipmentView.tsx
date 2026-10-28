@@ -29,16 +29,19 @@ const NewShipmentView = () => {
         supplierId: initialState.supplierId || '',
         supplier: initialState.supplierName || '',
         status: 'Planned',
+        etd: '',
         eta: new Date().toISOString().split('T')[0],
         vesselName: '',
         description: '',
         countryOfOrigin: '',
         portOfArrival: '',
-        finalDestination: '',
+        landTransportRoute: 'Dar es Salaam (DSM) to Lusaka',
+        finalDestination: 'Lusaka',
         delayDays: 0,
         expectedEta: new Date().toISOString().split('T')[0],
         invoiceNumber: '',
         blNumber: '',
+        trackingReferenceNumber: '',
         ctrNo: '',
         containers: [''],
         freight: 'Sea Freight',
@@ -100,8 +103,11 @@ const NewShipmentView = () => {
             if (existing) {
                 setFormData({
                     ...existing,
+                    etd: existing.etd ? new Date(existing.etd).toISOString().split('T')[0] : '',
                     eta: existing.eta ? new Date(existing.eta).toISOString().split('T')[0] : '',
                     expectedEta: existing.expectedEta ? new Date(existing.expectedEta).toISOString().split('T')[0] : '',
+                    trackingReferenceNumber: existing.trackingReferenceNumber || '',
+                    landTransportRoute: existing.landTransportRoute || 'Dar es Salaam (DSM) to Lusaka',
                     containers: existing.ctrNo ? existing.ctrNo.split(',').map((c: string) => c.trim()).filter(Boolean) : [''],
                     trucks: existing.truckNumber ? existing.truckNumber.split(',').map((t: string) => t.trim()).filter(Boolean) : ['']
                 } as any);
@@ -279,9 +285,18 @@ const NewShipmentView = () => {
                     {/* Timeline */}
                     <div>
                         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Timeline</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Planned ETA</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Planned ETD (Departure)</label>
+                                <input
+                                    type="date"
+                                    value={formData.etd || ''}
+                                    onChange={e => setFormData({ ...formData, etd: e.target.value })}
+                                    className="w-full border border-slate-200 rounded-lg p-2.5 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Planned ETA (Arrival)</label>
                                 <input
                                     type="date"
                                     value={formData.eta}
@@ -325,8 +340,8 @@ const NewShipmentView = () => {
 
                     {/* Route */}
                     <div>
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Route</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Route & Transit Corridor</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Country of Origin</label>
                                 <select
@@ -363,6 +378,22 @@ const NewShipmentView = () => {
                                     <option value="Air Freight (Airport)">Air Freight (Airport)</option>
                                     <option value="Road Freight (Border)">Road Freight (Border)</option>
                                     <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Land Transport Route</label>
+                                <select
+                                    value={formData.landTransportRoute || 'Dar es Salaam (DSM) to Lusaka'}
+                                    onChange={e => setFormData({ ...formData, landTransportRoute: e.target.value })}
+                                    className="w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-white font-medium text-slate-800"
+                                >
+                                    <option value="Dar es Salaam (DSM) to Lusaka">Dar es Salaam (DSM) to Lusaka</option>
+                                    <option value="Beira to Lusaka">Beira to Lusaka</option>
+                                    <option value="Durban to Lusaka">Durban to Lusaka</option>
+                                    <option value="Walvis Bay to Lusaka">Walvis Bay to Lusaka</option>
+                                    <option value="Mombasa to Lusaka">Mombasa to Lusaka</option>
+                                    <option value="Direct Cross-Border Road">Direct Cross-Border Road</option>
+                                    <option value="Domestic Delivery">Domestic Delivery</option>
                                 </select>
                             </div>
                             <div>
@@ -410,6 +441,16 @@ const NewShipmentView = () => {
                                 />
                             </div>
                             <div className="flex flex-col justify-end">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tracking Reference No</label>
+                                <input
+                                    type="text"
+                                    value={formData.trackingReferenceNumber || ''}
+                                    onChange={e => setFormData({ ...formData, trackingReferenceNumber: e.target.value })}
+                                    className="w-full border border-slate-200 rounded-lg p-2.5 text-sm"
+                                    placeholder="e.g. TRK-7890123 / MEDU12345"
+                                />
+                            </div>
+                            <div className="flex flex-col justify-end">
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Transport Method (TPT)</label>
                                 <select
                                     value={formData.freight || 'Sea Freight'}
@@ -421,9 +462,6 @@ const NewShipmentView = () => {
                                     <option value="Rail Freight">Rail Freight</option>
                                     <option value="Road Transport">Road Transport</option>
                                 </select>
-                            </div>
-                            <div className="flex flex-col justify-end">
-                                
                             </div>
                             <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Container Numbers (CONT)</label>

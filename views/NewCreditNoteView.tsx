@@ -133,22 +133,41 @@ const NewCreditNoteView = () => {
 
     const [dbCustomers, setDbCustomers] = useState<any[]>([]);
     const [dbItems, setDbItems] = useState<any[]>([]);
+    const [allInvoices, setAllInvoices] = useState<any[]>([]);
+    const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
 
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [custs, itemsData] = await Promise.all([
+                const [custs, itemsData, invs] = await Promise.all([
                     apiService.getCustomers(),
-                    apiService.getItems()
+                    apiService.getItems(),
+                    apiService.getInvoices().catch(() => [])
                 ]);
                 setDbCustomers(custs);
                 setDbItems(itemsData);
+                setAllInvoices(invs);
             } catch (err) {
                 console.error('Failed to load credit note master data:', err);
             }
         };
         loadData();
     }, []);
+
+    const selectedDbCustomer = useMemo(() => {
+        return dbCustomers.find(c => c.name === customer || c.customerName === customer);
+    }, [dbCustomers, customer]);
+
+    const customerInvoices = useMemo(() => {
+        if (!customer) return [];
+        return allInvoices.filter((inv: any) => 
+            (inv.customer === customer || inv.customer?.name === customer || (selectedDbCustomer?.id && inv.customerId === selectedDbCustomer.id))
+        );
+    }, [allInvoices, customer, selectedDbCustomer]);
+
+    const selectedInvoice = useMemo(() => {
+        return allInvoices.find((i: any) => i.id === selectedInvoiceId);
+    }, [allInvoices, selectedInvoiceId]);
 
     useEffect(() => {
         const searchParams = new URLSearchParams(location.search);
@@ -316,10 +335,19 @@ const NewCreditNoteView = () => {
                 return;
             }
 
+            if (selectedInvoice) {
+                const maxCredit = Number(selectedInvoice.balanceDue ?? selectedInvoice.grandTotal ?? 0);
+                if (calculations.grandTotal > maxCredit) {
+                    alert(`Credit note amount (${currency} ${calculations.grandTotal.toFixed(2)}) cannot exceed Invoice Balance Due (${currency} ${maxCredit.toFixed(2)}). Please reduce credit items.`);
+                    return;
+                }
+            }
+
             const payload = {
                 reference: useManualRef ? reference : undefined,
                 issueDate,
                 customerId,
+                salesInvoiceId: selectedInvoiceId || null,
                 currency,
                 description,
                 grandTotal: calculations.grandTotal,
@@ -421,10 +449,31 @@ const NewCreditNoteView = () => {
                                         />
                                     </div>
                                 </div>
-                                <SelectField label="Sales Invoice" value={salesInvoice} onChange={(e: any) => setSalesInvoice(e.target.value)} Icon={Layers}>
-                                    <option value="Automatic">Automatic Selection</option>
-                                    <option value="Manual">Manual Allocation</option>
-                                </SelectField>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Sales Invoice</label>
+                                    <div className="relative group">
+                                        <Layers size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-indigo-500" />
+                                        <select
+                                            value={selectedInvoiceId}
+                                            onChange={(e: any) => setSelectedInvoiceId(e.target.value)}
+                                            className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-5 py-3 text-[13px] font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
+                                        >
+                                            <option value="">-- No specific invoice (Automatic) --</option>
+                                            {customerInvoices.map((inv: any) => (
+                                                <option key={inv.id} value={inv.id}>
+                                                    {inv.reference} — Due: {inv.currency || 'ZMW'} {Number(inv.balanceDue ?? inv.grandTotal ?? 0).toFixed(2)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                    </div>
+                                    {selectedInvoice && (
+                                        <div className="text-[11px] font-bold text-indigo-700 bg-indigo-50/80 border border-indigo-100 px-3 py-1.5 rounded-xl flex items-center justify-between">
+                                            <span>Linked Invoice: {selectedInvoice.reference}</span>
+                                            <span>Balance Due: {selectedInvoice.currency || 'ZMW'} {Number(selectedInvoice.balanceDue ?? selectedInvoice.grandTotal ?? 0).toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -456,11 +505,16 @@ const NewCreditNoteView = () => {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Currency</label>
-                                            <div className="bg-slate-100 rounded-2xl px-5 py-3 text-[13px] font-black text-slate-500 border border-slate-200">
-                                                {currency}
+                                            <div className="bg-slate-100 rounded-2xl px-5 py-3 text-[13px] font-black text-slate-700 border border-slate-200 flex items-center justify-between">
+                                                <span>{currency}</span>
+                                                <span className="text-[10px] uppercase font-bold text-slate-400">{currency === 'ZMW' ? 'Base' : 'Foreign'}</span>
                                             </div>
                                         </div>
-                                        <InputField label="Exchange Rate" value={exchangeRate} onChange={(e: any) => setExchangeRate(e.target.value)} Icon={RefreshCw} placeholder="1.00" />
+                                        {currency !== 'ZMW' ? (
+                                            <InputField label={`Exchange Rate (1 ${currency} = ___ ZMW)`} value={exchangeRate} onChange={(e: any) => setExchangeRate(e.target.value)} Icon={RefreshCw} placeholder="1.00" />
+                                        ) : (
+                                            <div />
+                                        )}
                                     </div>
 
                                     <InputField label="General Description" value={description} onChange={(e: any) => setDescription(e.target.value)} placeholder="Reason for credit..." Icon={Briefcase} />

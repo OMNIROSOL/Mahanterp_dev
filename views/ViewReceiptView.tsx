@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import apiService from '../services/apiService';
-import DocumentAttachments from '../components/shared/DocumentAttachments';
+import DocumentActionBar from '../components/shared/DocumentActionBar';
+import { formatDateDMY } from '../utils/dateUtils';
 import { Receipt as ReceiptType } from '../types';
 import {
     FolderOpen, ChevronRight, Edit, Printer, FileText, Mail,
@@ -93,155 +94,27 @@ const ViewReceiptView = () => {
                 <span className="text-slate-400">View</span>
             </div>
 
-            {/* Toolbar */}
-            <div className="bg-slate-50 px-6 py-4 border-b border-gray-200 flex items-center justify-between no-print shadow-sm">
-                <div className="flex items-center space-x-4">
-                    <span className="text-[13px] font-black text-slate-400 uppercase tracking-widest mr-2">Receipt</span>
-                    <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-sm overflow-visible relative group">
-                        <button
-                            onClick={() => navigate(`/receipts/edit/${receipt.id}`)}
-                            className="px-5 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50 border-r border-slate-200 transition-all flex items-center gap-2"
-                        >
-                            <Edit size={14} className="text-blue-500" /> Edit
-                        </button>
-                        <div className="relative" ref={dropdownRef}>
-                            <button
-                                onClick={() => setIsCopyToOpen(!isCopyToOpen)}
-                                className={`px-5 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50 flex items-center h-full transition-all group ${isCopyToOpen ? 'bg-slate-50' : ''}`}
-                            >
-                                <ChevronDown size={14} className={`mr-2 text-slate-400 transition-transform duration-300 ${isCopyToOpen ? 'rotate-180 text-blue-500' : ''}`} />
-                                Copy to
-                            </button>
-                            {isCopyToOpen && (
-                                <div className="absolute left-0 mt-2 w-56 bg-white border border-slate-200 shadow-2xl rounded-xl py-2 z-50 animate-in fade-in slide-in-from-top-2">
-                                    <div className="px-4 py-2 border-b border-slate-50 mb-1">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Actions</span>
-                                    </div>
-                                    <button disabled className="w-full text-left px-4 py-2.5 text-[12px] text-slate-300 cursor-not-allowed font-medium italic">New Payment (Incoming)</button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <div className="w-[1px] h-8 bg-slate-200 mx-2"></div>
-                    <div className="flex space-x-2">
-                        <button onClick={() => window.print()} className="bg-white border border-slate-200 px-5 py-2 text-[12px] font-bold text-slate-700 rounded-lg shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2">
-                            <Printer size={14} className="text-slate-400" /> Print
-                        </button>
-                        <button 
-                            onClick={async () => {
-                                try {
-                                    if (!pdfRef.current) return;
-                                    const html2canvas = (await import('html2canvas-pro')).default;
-                                    const jsPDF = (await import('jspdf')).jsPDF;
-                                    
-                                    const element = pdfRef.current;
-                                    const originalStyle = element.getAttribute('style') || '';
-                                    element.style.maxWidth = 'none';
-                                    element.style.width = '850px';
-                                    
-                                    const canvas = await html2canvas(element, {
-                                        scale: 2,
-                                        useCORS: true,
-                                        logging: true,
-                                        backgroundColor: '#ffffff',
-                                        onclone: (clonedDoc) => {
-                                            const style = clonedDoc.createElement('style');
-                                            style.innerHTML = `
-                                                * {
-                                                    --color-slate-50: #f8fafc !important;
-                                                    --color-slate-100: #f1f5f9 !important;
-                                                    --color-slate-200: #e2e8f0 !important;
-                                                    --color-slate-300: #cbd5e1 !important;
-                                                    --color-slate-400: #94a3b8 !important;
-                                                    --color-slate-500: #64748b !important;
-                                                    --color-slate-600: #475569 !important;
-                                                    --color-slate-700: #334155 !important;
-                                                    --color-slate-800: #1e293b !important;
-                                                    --color-slate-900: #0f172a !important;
-                                                    --color-indigo-50: #eef2ff !important;
-                                                    --color-indigo-100: #e0e7ff !important;
-                                                    --color-indigo-200: #c7d2fe !important;
-                                                    --color-indigo-300: #a5b4fc !important;
-                                                    --color-indigo-400: #818cf8 !important;
-                                                    --color-indigo-500: #6366f1 !important;
-                                                    --color-indigo-600: #4f46e5 !important;
-                                                    --color-indigo-700: #4338ca !important;
-                                                    --color-indigo-800: #3730a3 !important;
-                                                    --color-indigo-900: #312e81 !important;
-                                                    --color-rose-50: #fff1f2 !important;
-                                                    --color-rose-100: #ffe4e6 !important;
-                                                    --color-rose-200: #fecdd3 !important;
-                                                    --color-rose-300: #fda4af !important;
-                                                    --color-rose-400: #fb7185 !important;
-                                                    --color-rose-500: #f43f5e !important;
-                                                    --color-rose-600: #e11d48 !important;
-                                                    --color-blue-50: #eff6ff !important;
-                                                    --color-blue-100: #dbeafe !important;
-                                                    --color-blue-200: #bfdbfe !important;
-                                                    --color-blue-300: #93c5fd !important;
-                                                    --color-blue-400: #60a5fa !important;
-                                                    --color-blue-500: #3b82f6 !important;
-                                                    --color-blue-600: #2563eb !important;
-                                                    --color-gray-50: #f9fafb !important;
-                                                    --color-gray-100: #f3f4f6 !important;
-                                                    --color-gray-200: #e5e7eb !important;
-                                                    --color-gray-300: #d1d5db !important;
-                                                    --color-gray-400: #9ca3af !important;
-                                                    --color-gray-500: #6b7280 !important;
-                                                    --color-gray-600: #4b5563 !important;
-                                                    --color-gray-700: #374151 !important;
-                                                    --color-gray-800: #1f2937 !important;
-                                                    --color-gray-900: #111827 !important;
-                                                    --color-emerald-50: #ecfdf5 !important;
-                                                    --color-emerald-100: #d1fae5 !important;
-                                                    --color-emerald-500: #10b981 !important;
-                                                    --color-emerald-600: #059669 !important;
-                                                    --color-amber-50: #fffbeb !important;
-                                                    --color-amber-100: #fef3c7 !important;
-                                                    --color-amber-500: #f59e0b !important;
-                                                    --color-amber-600: #d97706 !important;
-                                                }
-                                            `;
-                                            clonedDoc.head.appendChild(style);
-                                        }
-                                    });
-                                    
-                                    element.setAttribute('style', originalStyle);
-                                    
-                                    const imgData = canvas.toDataURL('image/png');
-                                    const pdf = new jsPDF('p', 'mm', 'a4');
-                                    const imgProps = pdf.getImageProperties(imgData);
-                                    const pdfWidth = pdf.internal.pageSize.getWidth();
-                                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-                                    
-                                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-                                    pdf.save(`${receipt.reference || 'Receipt'}.pdf`);
-                                } catch (err: any) {
-                                    console.error('PDF Generation failed:', err);
-                                    alert(`Failed to generate PDF: ${err.message || 'Unknown error'}`);
-                                }
-                            }} 
-                            className="bg-white border border-slate-200 px-5 py-2 text-[12px] font-bold text-slate-700 rounded-lg shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
-                        >
-                            <Download size={14} className="text-slate-400" /> PDF
-                        </button>
-                        <button className="bg-white border border-slate-200 px-5 py-2 text-[12px] font-bold text-slate-700 rounded-lg shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2">
-                            <Mail size={14} className="text-slate-400" /> Email
-                        </button>
-                    </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                    <div className="flex bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                        <button onClick={handleFirst} disabled={receiptIndex === 0} className="px-3.5 py-2 text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-r border-slate-200 disabled:opacity-20 transition-all"><ChevronsLeft size={16} /></button>
-                        <button onClick={handlePrev} disabled={receiptIndex === 0} className="px-3.5 py-2 text-slate-400 hover:text-blue-600 hover:bg-slate-50 disabled:opacity-20 transition-all"><ChevronLeft size={16} /></button>
-                    </div>
-                    <span className="text-[11px] font-bold text-slate-400 tracking-widest">{receiptIndex + 1} / {allReceipts.length}</span>
-                    <div className="flex bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                        <button onClick={handleNext} disabled={receiptIndex === allReceipts.length - 1} className="px-3.5 py-2 text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-r border-slate-200 disabled:opacity-20 transition-all"><ChevronRightIcon size={16} /></button>
-                        <button onClick={handleLast} disabled={receiptIndex === allReceipts.length - 1} className="px-3.5 py-2 text-slate-400 hover:text-blue-600 hover:bg-slate-50 disabled:opacity-20 transition-all"><ChevronsRight size={16} /></button>
-                    </div>
-                </div>
-            </div>
+            <DocumentActionBar
+                documentId={receipt.id}
+                documentType="Receipt"
+                reference={receipt.reference}
+                editUrl={`/receipts/edit/${receipt.id}`}
+                cloneUrl={`/receipts/new?copyFrom=${receipt.id}`}
+                copyToOptions={[
+                    { label: 'New Payment', url: `/payments/new?copyFrom=${receipt.id}` }
+                ]}
+                pdfRef={pdfRef}
+                navigation={{
+                    currentIndex: Math.max(0, receiptIndex),
+                    totalCount: allReceipts.length,
+                    onFirst: handleFirst,
+                    onPrev: handlePrev,
+                    onNext: handleNext,
+                    onLast: handleLast
+                }}
+            />
+
+
 
             {/* Document */}
             <div className="flex-1 p-6 flex justify-center overflow-auto bg-slate-100">
@@ -309,7 +182,7 @@ const ViewReceiptView = () => {
                                     <div className="space-y-3">
                                         <div className="flex justify-between">
                                             <span className="font-bold text-gray-500">Date:</span>
-                                            <span className="font-semibold">{receipt.date}</span>
+                                            <span className="font-semibold">{formatDateDMY(receipt.date)}</span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="font-bold text-gray-500">Reference:</span>

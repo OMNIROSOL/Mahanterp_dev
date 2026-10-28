@@ -14,6 +14,8 @@ const NewExpenseClaimView = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [payers, setPayers] = useState<any[]>([]);
+    const [divisions, setDivisions] = useState<any[]>([]);
+    const [division, setDivision] = useState('General');
 
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [reference, setReference] = useState('');
@@ -30,10 +32,14 @@ const NewExpenseClaimView = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const accData = await apiService.getAccounts();
-                const payerData = await apiService.getExpenseClaimPayers();
+                const [accData, payerData, divData] = await Promise.all([
+                    apiService.getAccounts(),
+                    apiService.getExpenseClaimPayers(),
+                    apiService.getDivisions().catch(() => [])
+                ]);
                 setAccounts(accData);
                 setPayers(payerData);
+                setDivisions(divData || []);
 
                 if (isEditing) {
                     const claim = await apiService.getExpenseClaim(id);
@@ -43,6 +49,7 @@ const NewExpenseClaimView = () => {
                         setPayerId(claim.payerId || '');
                         setPayee(claim.payee || '');
                         setCurrency(claim.currency || 'ZMW');
+                        setDivision(claim.division || 'General');
                         setDescription(claim.description || '');
                         setAmountsAreTaxInclusive(claim.amountsAreTaxInclusive || false);
                         
@@ -100,14 +107,13 @@ const NewExpenseClaimView = () => {
                 payee,
                 currency,
                 description,
+                division: division || 'General',
                 amountsAreTaxInclusive,
                 items: items.filter(i => i.account || i.description || i.unitPrice > 0)
             };
 
             if (isEditing) {
-                // await apiService.updateExpenseClaim(id, data);
-                // Assume update exists, but for now we'll just alert
-                alert('Update not fully implemented in API yet, saving as new if reference changed');
+                await apiService.updateExpenseClaim(id, data);
             } else {
                 await apiService.createExpenseClaim(data);
             }
@@ -176,30 +182,49 @@ const NewExpenseClaimView = () => {
                             </div>
                         </div>
 
-                        <div className="w-1/2 pr-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Paid by</label>
-                                {!isView && (
-                                    <button type="button" onClick={() => navigate('/expense-claim-payers')} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:underline">
-                                        Add payer
-                                    </button>
-                                )}
+                        <div className="grid grid-cols-2 gap-8">
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Paid by</label>
+                                    {!isView && (
+                                        <button type="button" onClick={() => navigate('/expense-claim-payers')} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:underline">
+                                            Add payer
+                                        </button>
+                                    )}
+                                </div>
+                                <select 
+                                    value={payerId}
+                                    disabled={isView}
+                                    onChange={(e) => setPayerId(e.target.value)}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                >
+                                    <option value="">Select an expense claim payer...</option>
+                                    {payers.filter((p: any) => !p.inactive).map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}{p.employee?.department ? ` · ${p.employee.department}` : ''}</option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-slate-400 mt-2 flex items-start gap-1">
+                                    <HelpCircle size={12} className="mt-0.5 shrink-0" />
+                                    Paid by is who submitted the claim (staff).
+                                </p>
                             </div>
-                            <select 
-                                value={payerId}
-                                disabled={isView}
-                                onChange={(e) => setPayerId(e.target.value)}
-                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                            >
-                                <option value="">Select an expense claim payer...</option>
-                                {payers.filter((p: any) => !p.inactive).map(p => (
-                                    <option key={p.id} value={p.id}>{p.name}{p.employee?.department ? ` · ${p.employee.department}` : ''}</option>
-                                ))}
-                            </select>
-                            <p className="text-[11px] text-slate-400 mt-2 flex items-start gap-1">
-                                <HelpCircle size={12} className="mt-0.5 shrink-0" />
-                                Paid by is who submitted the claim (staff). Create them under Accounting → Expense Claim Payers.
-                            </p>
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Division / Branch</label>
+                                <select 
+                                    value={division}
+                                    disabled={isView}
+                                    onChange={(e) => setDivision(e.target.value)}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                                >
+                                    <option value="General">General / Head Office</option>
+                                    {divisions.map((d: any) => (
+                                        <option key={d.id} value={d.name}>{d.name}</option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-slate-400 mt-2">
+                                    Assign to branch or division for profit tracking.
+                                </p>
+                            </div>
                         </div>
 
                         <div>

@@ -38,6 +38,7 @@ export const apiService = {
   getCustomer: (id: string) => api.get(`/customers/${id}`).then(res => res.data),
   getCustomerInvoices: (id: string) => api.get(`/customers/${id}/invoices`).then(res => res.data),
   getCustomerTransactions: (id: string) => api.get(`/customers/${id}/transactions`).then(res => res.data),
+  getCustomerStatement: (id: string, params?: { from?: string; to?: string }) => api.get(`/customers/${id}/statement`, { params }).then(res => res.data),
   createCustomer: (data: any) => api.post('/customers', data).then(res => res.data),
   updateCustomer: (id: string, data: any) => api.put(`/customers/${id}`, data).then(res => res.data),
 
@@ -98,6 +99,7 @@ export const apiService = {
   getInvoiceTransactions: (id: string) => api.get(`/invoices/${id}/transactions`).then(res => res.data),
   createInvoice: (data: any) => api.post('/invoices', data).then(res => res.data),
   updateInvoice: (id: string, data: any) => api.put(`/invoices/${id}`, data).then(res => res.data),
+  deleteInvoice: (id: string) => api.delete(`/invoices/${id}`).then(res => res.data),
   updateInvoiceStatus: (id: string, status: string) => api.patch(`/invoices/${id}`, { status }).then(res => res.data),
 
   getDeliveryNotes: () => api.get('/delivery-notes').then(res => res.data),
@@ -163,6 +165,7 @@ export const apiService = {
   getSuppliers: () => api.get('/suppliers').then(res => res.data),
   getSupplier: (id: string) => api.get(`/suppliers/${id}`).then(res => res.data),
   getSupplierInvoices: (id: string) => api.get(`/suppliers/${id}/invoices`).then(res => res.data),
+  getSupplierStatement: (id: string, params?: { from?: string; to?: string }) => api.get(`/suppliers/${id}/statement`, { params }).then(res => res.data),
   createSupplier: (data: any) => api.post('/suppliers', data).then(res => res.data),
   updateSupplier: (id: string, data: any) => api.put(`/suppliers/${id}`, data).then(res => res.data),
   deleteSupplier: (id: string) => api.delete(`/suppliers/${id}`).then(res => res.data),
@@ -189,6 +192,14 @@ export const apiService = {
   getPurchaseInvoice: (id: string) => api.get(`/purchase-invoices/${id}`).then(res => res.data),
   createPurchaseInvoice: (data: any) => api.post('/purchase-invoices', data).then(res => res.data),
   updatePurchaseInvoice: (id: string, data: any) => api.put(`/purchase-invoices/${id}`, data).then(res => res.data),
+  deletePurchaseInvoice: (id: string) => api.delete(`/purchase-invoices/${id}`).then(res => res.data),
+
+  // Journal Entries
+  getJournalEntries: () => api.get('/journal-entries').then(res => res.data),
+  getJournalEntry: (id: string) => api.get(`/journal-entries/${id}`).then(res => res.data),
+  createJournalEntry: (data: any) => api.post('/journal-entries', data).then(res => res.data),
+  updateJournalEntry: (id: string, data: any) => api.put(`/journal-entries/${id}`, data).then(res => res.data),
+  deleteJournalEntry: (id: string) => api.delete(`/journal-entries/${id}`).then(res => res.data),
 
   // Goods Received Notes
   getGoodsReceivedNote: (id: string) => api.get(`/goods-received-notes/${id}`).then(res => res.data),
@@ -201,7 +212,7 @@ export const apiService = {
 
   // Reference Generation
   getLocations: () => api.get('/locations').then(res => res.data),
-  getNextReference: (type: 'invoice' | 'quote' | 'order' | 'delivery' | 'customer' | 'supplier' | 'purchase-quote' | 'purchase-enquiry' | 'purchase-order' | 'receipt' | 'payment' | 'purchase-invoice' | 'debit-note' | 'credit-note' | 'goods-received-note' | 'inventory-transfer' | 'inventory-write-off' | 'employee') =>
+  getNextReference: (type: 'invoice' | 'quote' | 'order' | 'delivery' | 'customer' | 'supplier' | 'purchase-quote' | 'purchase-enquiry' | 'purchase-order' | 'receipt' | 'payment' | 'purchase-invoice' | 'debit-note' | 'credit-note' | 'goods-received-note' | 'inventory-transfer' | 'inventory-write-off' | 'employee' | 'journal-entry' | 'journal') =>
     api.get(`/reference/next/${type}`).then(res => res.data.nextRef),
 
   // Accounts
@@ -396,6 +407,7 @@ export const apiService = {
   getExpenseClaims: () => api.get('/expense-claims').then(res => res.data),
   getExpenseClaim: (id: string) => api.get(`/expense-claims/${id}`).then(res => res.data),
   createExpenseClaim: (data: any) => api.post('/expense-claims', data).then(res => res.data),
+  updateExpenseClaim: (id: string, data: any) => api.put(`/expense-claims/${id}`, data).then(res => res.data),
 
   getPayslipItems: () => api.get('/payslip-items').then(res => res.data),
   createPayslipItem: (data: any) => api.post('/payslip-items', data).then(res => res.data),
@@ -405,6 +417,8 @@ export const apiService = {
   createPayslip: (data: any) => api.post('/payslips', data).then(res => res.data),
   updatePayslip: (id: string, data: any) => api.put(`/payslips/${id}`, data).then(res => res.data),
   deletePayslip: (id: string) => api.delete(`/payslips/${id}`).then(res => res.data),
+  calculateStatutory: (data: { grossPay: number }) => api.post('/payroll/calculate-statutory', data).then(res => res.data),
+  getPayslipSummaryReport: (params?: any) => api.get('/reports/payslip-summary', { params }).then(res => res.data),
 
   // Employees
   getEmployees: () => api.get('/employees').then(res => res.data),
@@ -491,6 +505,13 @@ export const apiService = {
   createFromBankStatementLine: (id: string, data: any = {}) => api.post(`/bank-statement-lines/${id}/create`, data).then(res => res.data),
   completeBankStatement: (id: string) => api.post(`/bank-statements/${id}/complete`, {}).then(res => res.data),
 
+  getBankReconciliationData: (accountId: string, params?: { statementDate?: string; statementBalance?: number }) =>
+    api.get(`/bank-accounts/${accountId}/reconciliation`, { params }).then(res => res.data),
+  reconcileBankLine: (accountId: string, data: { type: 'Receipt' | 'Payment' | 'Transfer'; id: string; cleared: boolean; clearedDate?: string }) =>
+    api.patch(`/bank-accounts/${accountId}/reconcile-line`, data).then(res => res.data),
+  bulkReconcileBankLines: (accountId: string, data: { lines: Array<{ type: string; id: string; cleared: boolean; clearedDate?: string }> }) =>
+    api.post(`/bank-accounts/${accountId}/bulk-reconcile`, data).then(res => res.data),
+
   getImportTypes: () => api.get('/import/types').then(res => res.data),
   downloadImportTemplate: async (type: string) => {
     const res = await api.get(`/import/template/${type}`, { responseType: 'blob' });
@@ -509,6 +530,42 @@ export const apiService = {
     return api.post(`/import/${type}`, formData, { timeout: 60000 }).then(res => res.data);
   },
   commitImport: (type: string, rows: any[]) => api.post(`/import/${type}/commit`, { rows }, { timeout: 60000 }).then(res => res.data),
+
+  // Lock Date
+  getLockDate: () => api.get('/settings/lock-date').then(res => res.data),
+  setLockDate: (lockDate: string | null) => api.post('/settings/lock-date', { lockDate }).then(res => res.data),
+
+  // Starting Balances
+  getStartingBalances: () => api.get('/settings/starting-balances').then(res => res.data),
+  setStartingBalances: (data: { startingDate: string | null; balances: any[] }) => api.post('/settings/starting-balances', data).then(res => res.data),
+
+  // Bank Rules
+  getBankRules: () => api.get('/bank-rules').then(res => res.data),
+  createBankRule: (data: any) => api.post('/bank-rules', data).then(res => res.data),
+  updateBankRule: (id: string, data: any) => api.put(`/bank-rules/${id}`, data).then(res => res.data),
+  deleteBankRule: (id: string) => api.delete(`/bank-rules/${id}`).then(res => res.data),
+
+  // Fixed Assets & Depreciation
+  getFixedAssets: () => api.get('/fixed-assets').then(res => res.data),
+  createFixedAsset: (data: any) => api.post('/fixed-assets', data).then(res => res.data),
+  getFixedAsset: (id: string) => api.get(`/fixed-assets/${id}`).then(res => res.data),
+  updateFixedAsset: (id: string, data: any) => api.put(`/fixed-assets/${id}`, data).then(res => res.data),
+  deleteFixedAsset: (id: string) => api.delete(`/fixed-assets/${id}`).then(res => res.data),
+
+  getDepreciationEntries: () => api.get('/depreciation-entries').then(res => res.data),
+  createDepreciationEntry: (data: any) => api.post('/depreciation-entries', data).then(res => res.data),
+  deleteDepreciationEntry: (id: string) => api.delete(`/depreciation-entries/${id}`).then(res => res.data),
+
+  // Manager.io Reports
+  getAgedPayables: () => api.get('/reports/aged-payables').then(res => res.data),
+  getSupplierSummaryReport: () => api.get('/reports/supplier-summary').then(res => res.data),
+  getGlSummaryReport: (params?: { from?: string; to?: string }) => api.get('/reports/gl-summary', { params }).then(res => res.data),
+  getTaxSummaryReport: (params?: { from?: string; to?: string }) => api.get('/reports/tax-summary', { params }).then(res => res.data),
+  getCashFlowReport: (params?: { from?: string; to?: string }) => api.get('/reports/cash-flow', { params }).then(res => res.data),
+  getInventoryValueSummaryReport: () => api.get('/reports/inventory-value-summary').then(res => res.data),
+  // Live Navigation Record Counts (Manager.io Parity)
+  getCounts: () => api.get('/counts').then(res => res.data),
 };
 
+export { api };
 export default apiService;

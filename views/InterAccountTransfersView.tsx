@@ -5,6 +5,8 @@ import apiService from '../services/apiService';
 import RowActions from '../components/shared/RowActions';
 import { cn } from '../utils/cn';
 
+import { formatDateDMY } from '../utils/dateUtils';
+
 interface InterAccountTransfer {
     id: string;
     reference: string;
@@ -20,6 +22,7 @@ const InterAccountTransfersView = () => {
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
     const [transfers, setTransfers] = useState<InterAccountTransfer[]>([]);
+    const [accounts, setAccounts] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -29,13 +32,26 @@ const InterAccountTransfersView = () => {
     const loadTransfers = async () => {
         setIsLoading(true);
         try {
-            const data = await apiService.getInterAccountTransfers();
-            setTransfers(data);
+            const [tData, accData] = await Promise.all([
+                apiService.getInterAccountTransfers(),
+                apiService.getAccounts().catch(() => [])
+            ]);
+            setTransfers(tData);
+            setAccounts(accData);
         } catch (error) {
             console.error('Failed to load transfers:', error);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const getAccountDisplay = (val: string) => {
+        if (!val) return '—';
+        const found = accounts.find(a => a.id === val || a.name?.toLowerCase() === val.toLowerCase());
+        if (found) {
+            return `${found.name} (${found.currency || 'ZMW'})`;
+        }
+        return val;
     };
 
     const filteredTransfers = useMemo(() => {
@@ -96,6 +112,7 @@ const InterAccountTransfersView = () => {
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Reference</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Paid from</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Received in</th>
+                                <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Division</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Amount</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
                                 <th className="px-6 py-5 text-[11px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Actions</th>
@@ -103,19 +120,31 @@ const InterAccountTransfersView = () => {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {isLoading ? (
-                                <tr><td colSpan={7} className="text-center py-12 text-slate-500 font-bold text-sm">Loading transfers...</td></tr>
+                                <tr><td colSpan={8} className="text-center py-12 text-slate-500 font-bold text-sm">Loading transfers...</td></tr>
                             ) : filteredTransfers.length === 0 ? (
-                                <tr><td colSpan={7} className="text-center py-12 text-slate-500 font-bold text-sm">No transfers found.</td></tr>
+                                <tr><td colSpan={8} className="text-center py-12 text-slate-500 font-bold text-sm">No transfers found.</td></tr>
                             ) : (
                                 filteredTransfers.map((t) => (
                                     <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => navigate(`/inter-account-transfers/view/${t.id}`)}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-slate-600">{new Date(t.date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-slate-600">{formatDateDMY(t.date)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className="text-[13px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{t.reference}</span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-slate-700">{t.paidFromAccount}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-slate-700">{t.receivedInAccount}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-[14px] font-black text-slate-900">${parseFloat(String(t.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-slate-700">{getAccountDisplay(t.paidFromAccount)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-slate-700">{getAccountDisplay(t.receivedInAccount)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-[12px] font-semibold text-slate-500">{(t as any).division || 'General'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-[13px] font-black text-slate-900">
+                                            <div>
+                                                <span className="text-[10px] text-slate-400 mr-1">{(t as any).paidCurrency || 'ZMW'}</span>
+                                                {parseFloat(String((t as any).paidAmount || t.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            </div>
+                                            {(t as any).receivedCurrency && (t as any).receivedCurrency !== ((t as any).paidCurrency || 'ZMW') && (
+                                                <div className="text-[11px] text-indigo-600 font-bold">
+                                                    <span className="text-[9px] text-indigo-400 mr-1">{(t as any).receivedCurrency}</span>
+                                                    {parseFloat(String((t as any).receivedAmount || t.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 border border-emerald-200">
                                                 {t.status}
@@ -134,10 +163,10 @@ const InterAccountTransfersView = () => {
                         {!isLoading && filteredTransfers.length > 0 && (
                             <tfoot className="bg-slate-50 border-t border-slate-200">
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-4 text-right text-[11px] font-black text-slate-400 uppercase tracking-widest">Total</td>
+                                    <td colSpan={5} className="px-6 py-4 text-right text-[11px] font-black text-slate-400 uppercase tracking-widest">Total</td>
                                     <td colSpan={3} className="px-6 py-4">
                                         <span className="text-[15px] font-black text-slate-900 underline decoration-slate-200 decoration-2 underline-offset-4">
-                                            ${totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            ZMW {totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                         </span>
                                     </td>
                                 </tr>

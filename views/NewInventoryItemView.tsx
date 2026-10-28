@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Save, X, Package, Trash2, ArrowLeft, HelpCircle, Plus } from 'lucide-react';
+import { Save, X, Package, Trash2, ArrowLeft, HelpCircle, Plus, Calculator, DollarSign, TrendingUp } from 'lucide-react';
 import { InventoryItem, Division, Unit, ItemCategory } from '../types';
 import { apiService } from '../services/apiService';
 
@@ -23,6 +23,8 @@ const NewInventoryItemView = () => {
     totalValue: 0,
     reorderLevel: 0,
     category: '',
+    purchasePrice: 0,
+    sellingPrice: 0,
     marginPercentage: 0,
     incomeAccount: '',
     expenseAccount: '',
@@ -37,6 +39,11 @@ const NewInventoryItemView = () => {
   const [availableDivisions, setAvailableDivisions] = useState<Division[]>([]);
   const [availableUnits, setAvailableUnits] = useState<Unit[]>([]);
   const [availableCategories, setAvailableCategories] = useState<ItemCategory[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<any[]>([]);
+  const [showFxConverter, setShowFxConverter] = useState(false);
+  const [fxCurrency, setFxCurrency] = useState('USD');
+  const [fxPrice, setFxPrice] = useState<number | string>('');
+  const [fxRate, setFxRate] = useState<number | string>(27.50);
 
   React.useEffect(() => {
     const loadData = async () => {
@@ -49,6 +56,17 @@ const NewInventoryItemView = () => {
 
         const categoriesData = await apiService.getItemCategories();
         setAvailableCategories(categoriesData);
+
+        try {
+          const rates = await apiService.getExchangeRates();
+          setExchangeRates(rates || []);
+          const usdRate = rates?.find((r: any) => r.currencyCode === 'USD');
+          if (usdRate && usdRate.rate) {
+            setFxRate(parseFloat(usdRate.rate));
+          }
+        } catch (ratesErr) {
+          console.warn('Could not load exchange rates:', ratesErr);
+        }
 
         if (isEdit) {
           const items = await apiService.getItems();
@@ -327,6 +345,200 @@ const NewInventoryItemView = () => {
           </div>
         </div>
 
+        {/* Pricing & Valuation (Base Currency: ZMW) */}
+        <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-50 pb-4 gap-2">
+            <div>
+              <h2 className="text-[12px] font-black uppercase tracking-[0.2em] text-blue-600">Pricing & Valuation</h2>
+              <p className="text-[11px] text-gray-500 font-medium">All financial values are strictly recorded in Zambian Kwacha (ZMW base currency).</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFxConverter(!showFxConverter)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-blue-200/60 w-fit"
+            >
+              <DollarSign size={13} />
+              {showFxConverter ? 'Hide Currency Converter' : 'Foreign Cost Converter (USD / ZAR)'}
+            </button>
+          </div>
+
+          {/* FX Converter Dropdown */}
+          {showFxConverter && (
+            <div className="p-5 bg-gradient-to-r from-blue-50/70 to-indigo-50/50 rounded-xl border border-blue-200/80 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                  <Calculator size={14} className="text-blue-600" /> Convert Foreign Purchase Cost to ZMW
+                </span>
+                <span className="text-[10px] text-blue-600 font-bold">1 {fxCurrency} = {parseFloat(String(fxRate || 1)).toFixed(4)} ZMW</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-500">Foreign Currency</label>
+                  <select
+                    value={fxCurrency}
+                    onChange={(e) => {
+                      const cur = e.target.value;
+                      setFxCurrency(cur);
+                      const found = exchangeRates.find((r: any) => r.currencyCode === cur);
+                      if (found && found.rate) setFxRate(parseFloat(found.rate));
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="ZAR">ZAR (R)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-500">Foreign Unit Cost</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    placeholder="e.g. 10.00"
+                    value={fxPrice}
+                    onChange={(e) => setFxPrice(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-500">Exchange Rate (to ZMW)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    placeholder="e.g. 27.50"
+                    value={fxRate}
+                    onChange={(e) => setFxRate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const price = parseFloat(String(fxPrice || 0));
+                      const rate = parseFloat(String(fxRate || 1));
+                      if (price > 0 && rate > 0) {
+                        const converted = Number((price * rate).toFixed(2));
+                        setFormData(prev => ({ ...prev, purchasePrice: converted }));
+                      }
+                    }}
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm"
+                  >
+                    Apply ZMW {((parseFloat(String(fxPrice || 0))) * (parseFloat(String(fxRate || 1)))).toFixed(2)}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pricing Inputs Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center justify-between">
+                <span>Purchase / Cost Price (ZMW)</span>
+                <span className="text-[9px] font-bold text-blue-600">Base Currency</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">ZMW</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="purchasePrice"
+                  value={formData.purchasePrice ?? 0}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  className="w-full pl-14 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                />
+              </div>
+              <p className="text-[10px] text-gray-400">Standard cost used for purchase orders, quotes, and initial inventory valuation.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center justify-between">
+                <span>Selling Price (ZMW)</span>
+                <span className="text-[9px] font-bold text-blue-600">Base Currency</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">ZMW</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="sellingPrice"
+                  value={formData.sellingPrice ?? 0}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  className="w-full pl-14 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                />
+              </div>
+              <p className="text-[10px] text-gray-400">Default unit price auto-filled on sales quotes, orders, and tax invoices.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center justify-between">
+                <span>Target Margin (%)</span>
+                {parseFloat(String(formData.marginPercentage || 0)) > 0 && parseFloat(String(formData.purchasePrice || 0)) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cost = parseFloat(String(formData.purchasePrice || 0));
+                      const margin = parseFloat(String(formData.marginPercentage || 0));
+                      if (cost > 0 && margin > 0 && margin < 100) {
+                        const calculatedSelling = Number((cost / (1 - margin / 100)).toFixed(2));
+                        setFormData(prev => ({ ...prev, sellingPrice: calculatedSelling }));
+                      }
+                    }}
+                    className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 underline uppercase tracking-tight"
+                  >
+                    Auto-Set Selling Price
+                  </button>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  name="marginPercentage"
+                  value={formData.marginPercentage ?? 0}
+                  onChange={handleChange}
+                  placeholder="e.g. 25"
+                  className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">%</span>
+              </div>
+              <p className="text-[10px] text-gray-400">Target gross margin for price-approval safeguards and sales recommendations.</p>
+            </div>
+          </div>
+
+          {/* Pricing KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Unit Gross Profit</span>
+              <span className={`text-sm font-black ${(parseFloat(String(formData.sellingPrice || 0)) - parseFloat(String(formData.purchasePrice || 0))) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                ZMW {(parseFloat(String(formData.sellingPrice || 0)) - parseFloat(String(formData.purchasePrice || 0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Realized Margin</span>
+              <span className={`text-sm font-black ${(parseFloat(String(formData.sellingPrice || 0)) > 0 ? (((parseFloat(String(formData.sellingPrice || 0)) - parseFloat(String(formData.purchasePrice || 0))) / parseFloat(String(formData.sellingPrice || 0))) * 100) : 0) >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                {(parseFloat(String(formData.sellingPrice || 0)) > 0 ? (((parseFloat(String(formData.sellingPrice || 0)) - parseFloat(String(formData.purchasePrice || 0))) / parseFloat(String(formData.sellingPrice || 0))) * 100) : 0).toFixed(1)}%
+              </span>
+            </div>
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Markup on Cost</span>
+              <span className="text-sm font-black text-slate-700">
+                {(parseFloat(String(formData.purchasePrice || 0)) > 0 ? (((parseFloat(String(formData.sellingPrice || 0)) - parseFloat(String(formData.purchasePrice || 0))) / parseFloat(String(formData.purchasePrice || 0))) * 100) : 0).toFixed(1)}%
+              </span>
+            </div>
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Inventory Valuation</span>
+              <span className="text-sm font-black text-slate-700">
+                {formData.valuationMethod === 'WeightedAverage' ? 'Weighted Average' : formData.valuationMethod === 'FIFO' ? 'FIFO' : 'Manual'}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Stock & Best Practice Limits */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="md:col-span-2 bg-white p-8 rounded-2xl border border-gray-200 shadow-sm space-y-8">
@@ -368,17 +580,12 @@ const NewInventoryItemView = () => {
                   {formData.qtyReserved || 0}
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Margin (%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="marginPercentage"
-                    value={formData.marginPercentage}
-                    onChange={handleChange}
-                    placeholder="e.g. 20"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium font-bold text-slate-700"
-                  />
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Stock Value (Cost Basis)</label>
+                <div className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-black flex items-center justify-between">
+                  <span>ZMW {((parseFloat(String(formData.qtyOnHand || 0))) * (parseFloat(String(formData.purchasePrice || 0)))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">({formData.qtyOnHand || 0} units @ ZMW {parseFloat(String(formData.purchasePrice || 0)).toFixed(2)})</span>
+                </div>
               </div>
             </div>
           </div>

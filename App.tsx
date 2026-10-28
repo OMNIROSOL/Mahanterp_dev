@@ -85,6 +85,8 @@ import ViewSalesInvoiceTotalsByCustomerReportView from './views/ViewSalesInvoice
 import SalesInvoiceTotalsByItemView from './views/SalesInvoiceTotalsByItemView';
 import NewSalesInvoiceTotalsByItemReportView from './views/NewSalesInvoiceTotalsByItemReportView';
 import ViewSalesInvoiceTotalsByItemReportView from './views/ViewSalesInvoiceTotalsByItemReportView';
+import CustomerStatementView from './views/CustomerStatementView';
+import SupplierStatementView from './views/SupplierStatementView';
 
 // Payments Imports
 import PaymentsView from './views/PaymentsView';
@@ -95,6 +97,11 @@ import ViewPaymentView from './views/ViewPaymentView';
 import InterAccountTransfersView from './views/InterAccountTransfersView';
 import NewInterAccountTransferView from './views/NewInterAccountTransferView';
 import ViewInterAccountTransferView from './views/ViewInterAccountTransferView';
+
+// Journal Entries Imports
+import JournalEntriesView from './views/JournalEntriesView';
+import NewJournalEntryView from './views/NewJournalEntryView';
+import ViewJournalEntryView from './views/ViewJournalEntryView';
 
 // Expense Claims Imports
 import ExpenseClaimsView from './views/ExpenseClaimsView';
@@ -129,6 +136,7 @@ import PurchasePlanningView from './views/procurement/PurchasePlanningView';
 import SupplierCatalogSetupView from './views/procurement/SupplierCatalogSetupView';
 import ShipmentPlannerView from './views/ShipmentPlannerView';
 import NewShipmentView from './views/NewShipmentView';
+import PayslipSummaryView from './views/PayslipSummaryView';
 
 // Inventory Imports
 import InventoryItemsView from './views/InventoryItemsView';
@@ -168,7 +176,20 @@ import UnrealizedFxGainsView from './views/UnrealizedFxGainsView';
 import IncomeItemsView from './views/master/IncomeItemsView';
 import ExpenseItemsView from './views/master/ExpenseItemsView';
 
-
+// P2 Settings, Fixed Assets & Reports
+import SettingsLockDateView from './views/SettingsLockDateView';
+import SettingsStartingBalancesView from './views/SettingsStartingBalancesView';
+import SettingsBankRulesView from './views/SettingsBankRulesView';
+import FixedAssetsView from './views/FixedAssetsView';
+import NewFixedAssetView from './views/NewFixedAssetView';
+import DepreciationEntriesView from './views/DepreciationEntriesView';
+import TrialBalanceView from './views/TrialBalanceView';
+import AgedPayablesView from './views/AgedPayablesView';
+import SupplierSummaryView from './views/SupplierSummaryView';
+import GeneralLedgerSummaryView from './views/GeneralLedgerSummaryView';
+import TaxSummaryView from './views/TaxSummaryView';
+import CashFlowStatementView from './views/CashFlowStatementView';
+import InventoryValueSummaryView from './views/InventoryValueSummaryView';
 
 import LoginView from './views/LoginView';
 import DashboardView from './views/DashboardView';
@@ -248,6 +269,17 @@ const App = () => {
           <Route path="/reports/sales-invoice-totals-by-item/edit/:id" element={<NewSalesInvoiceTotalsByItemReportView />} />
           <Route path="/reports/sales-invoice-totals-by-item/view/:id" element={<ViewSalesInvoiceTotalsByItemReportView />} />
 
+          {/* Manager.io Standard Reports */}
+          <Route path="/reports/trial-balance" element={<TrialBalanceView />} />
+          <Route path="/trial-balance" element={<TrialBalanceView />} />
+          <Route path="/reports/aged-payables" element={<AgedPayablesView />} />
+          <Route path="/reports/supplier-summary" element={<SupplierSummaryView />} />
+          <Route path="/reports/gl-summary" element={<GeneralLedgerSummaryView />} />
+          <Route path="/reports/tax-summary" element={<TaxSummaryView />} />
+          <Route path="/reports/cash-flow" element={<CashFlowStatementView />} />
+          <Route path="/reports/inventory-value-summary" element={<InventoryValueSummaryView />} />
+          <Route path="/reports/payslip-summary" element={<PayslipSummaryView />} />
+
           {/* Settings Route */}
           <Route path="/settings" element={<SettingsView />} />
           <Route path="/settings/inventory-locations" element={<InventoryLocationsView />} />
@@ -269,6 +301,9 @@ const App = () => {
           <Route path="/settings/currencies" element={<SettingsCurrenciesView />} />
           <Route path="/settings/exchange-rates" element={<ExchangeRatesView />} />
           <Route path="/settings/exchange-rates/:id/transactions" element={<LinkedTransactionsView />} />
+          <Route path="/settings/lock-date" element={<SettingsLockDateView />} />
+          <Route path="/settings/starting-balances" element={<SettingsStartingBalancesView />} />
+          <Route path="/settings/bank-rules" element={<SettingsBankRulesView />} />
 
           {/* Inventory Routes */}
           <Route path="/inventory-items" element={<InventoryItemsView />} />
@@ -319,6 +354,10 @@ const App = () => {
           <Route path="/customers/qty-to-deliver/:id/transactions" element={<InventoryItemTransactionsView />} />
           <Route path="/customers/transactions/:id" element={<CustomerTransactionsView />} />
           <Route path="/customers/cost-of-sales/:id" element={<CustomerCostOfSalesView />} />
+          <Route path="/customers/statement" element={<CustomerStatementView />} />
+          <Route path="/customers/statement/:id" element={<CustomerStatementView />} />
+          <Route path="/reports/customer-statement" element={<CustomerStatementView />} />
+          <Route path="/reports/customer-statement/:id" element={<CustomerStatementView />} />
           <Route path="/customers/edit-columns" element={<EditCustomerColumnsView />} />
 
           {/* Sales Quotes Routes */}
@@ -372,6 +411,10 @@ const App = () => {
           <Route path="/suppliers/new" element={<NewSupplierView />} />
           <Route path="/suppliers/edit/:id" element={<EditSupplierView />} />
           <Route path="/suppliers/view/:id" element={<ViewSupplierView />} />
+          <Route path="/suppliers/statement" element={<SupplierStatementView />} />
+          <Route path="/suppliers/statement/:id" element={<SupplierStatementView />} />
+          <Route path="/reports/supplier-statement" element={<SupplierStatementView />} />
+          <Route path="/reports/supplier-statement/:id" element={<SupplierStatementView />} />
           <Route path="/suppliers/edit-columns" element={<EditSupplierColumnsView />} />
 
           {/* Purchase History Routes */}
@@ -446,6 +489,18 @@ const App = () => {
           <Route path="/inter-account-transfers/new" element={<NewInterAccountTransferView />} />
           <Route path="/inter-account-transfers/view/:id" element={<ViewInterAccountTransferView />} />
           <Route path="/inter-account-transfers/edit/:id" element={<NewInterAccountTransferView />} />
+
+          {/* Journal Entries Routes */}
+          <Route path="/journal-entries" element={<JournalEntriesView />} />
+          <Route path="/journal-entries/new" element={<NewJournalEntryView />} />
+          <Route path="/journal-entries/edit/:id" element={<NewJournalEntryView />} />
+          <Route path="/journal-entries/view/:id" element={<ViewJournalEntryView />} />
+
+          {/* Fixed Assets & Depreciation Routes */}
+          <Route path="/fixed-assets" element={<FixedAssetsView />} />
+          <Route path="/fixed-assets/new" element={<NewFixedAssetView />} />
+          <Route path="/fixed-assets/edit/:id" element={<NewFixedAssetView />} />
+          <Route path="/depreciation-entries" element={<DepreciationEntriesView />} />
 
           {/* Expense Claims Routes */}
           <Route path="/expense-claims" element={<ExpenseClaimsView />} />

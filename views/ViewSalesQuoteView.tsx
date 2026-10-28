@@ -62,7 +62,7 @@ const ViewSalesQuoteView = () => {
     }, [id]);
 
     const customerData = quote?.customer;
-    const customerEmail = customerData?.email || (quote?.customer?.name ? `${quote.customer.name.toLowerCase().replace(/\s+/g, '.')}@example.com` : '');
+    const customerEmail = customerData?.email || '';
 
     const expiryDate = useMemo(() => {
         if (!quote || !quote.issueDate || !quote.expiryDays) return 'N/A';

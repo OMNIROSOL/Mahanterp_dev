@@ -11,6 +11,7 @@ const EditSupplierColumnsView = () => {
         const defaultCols = [
             { id: 'name', label: 'Supplier Name', visible: true },
             { id: 'code', label: 'Supplier Code', visible: true },
+            { id: 'tpin', label: 'TPIN', visible: true },
             { id: 'email', label: 'Email address', visible: false },
             { id: 'controlAccount', label: 'Control account', visible: false },
             { id: 'division', label: 'Division', visible: true },

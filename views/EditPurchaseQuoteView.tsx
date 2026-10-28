@@ -16,7 +16,8 @@ import {
     CheckCircle2,
     AlertTriangle,
     Save,
-    Package
+    Package,
+    Coins
 } from 'lucide-react';
 import { SearchableSelect } from '../components/shared/SearchableSelect';
 import { cn } from '../utils/cn';
@@ -265,30 +266,37 @@ const EditPurchaseQuoteView = () => {
             return;
         }
 
+        const quoteItems = items.filter(i => i.item && i.item !== 'Select Item').map((i) => {
+            const invItem = inventoryItems.find(it => it.itemName === i.item || it.itemCode === i.item);
+            const qty = parseFloat(i.qty) || 0;
+            const unitPrice = parseFloat(i.unitPrice) || 0;
+            const total = Math.round(qty * unitPrice * 100) / 100;
+            return {
+                itemId: invItem?.id || null,
+                itemCode: invItem?.itemCode || (i as any).itemCode || '',
+                itemName: i.item,
+                description: i.description || i.item,
+                qty: qty,
+                unitPrice: unitPrice,
+                taxCode: "No tax",
+                unit: i.unit || invItem?.unitName || '',
+                discount: "",
+                totalAmount: total
+            };
+        });
+
+        const totalEnquiryAmount = quoteItems.reduce((acc, curr) => acc + curr.totalAmount, 0);
+
         const quoteData = {
             issueDate: formatDateForSave(issueDate),
             reference: reference,
             supplierId: selectedSupplier.id,
             description: description,
             currency: currency,
-            amount: 0,
+            amount: totalEnquiryAmount,
             status: status,
             billingAddress: address,
-            items: items.filter(i => i.item && i.item !== 'Select Item').map((i) => {
-                const invItem = inventoryItems.find(it => it.itemName === i.item);
-                const qty = parseFloat(i.qty) || 0;
-                return {
-                    itemId: invItem?.id || null,
-                    itemName: i.item,
-                    description: i.description || i.item,
-                    qty: qty,
-                    unitPrice: 0,
-                    taxCode: "No tax",
-                    unit: i.unit,
-                    discount: "",
-                    totalAmount: 0
-                };
-            }),
+            items: quoteItems,
             docOptions: options
         };
 
@@ -358,29 +366,39 @@ const EditPurchaseQuoteView = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-slate-50">
-                    <div className="space-y-6">
-                        <SelectField label="Supplier" value={supplier} onChange={(e: any) => {
-                            setSupplier(e.target.value);
-                            const selected = allSuppliers.find(s => s.name === e.target.value);
-                            if (selected) {
-                                setCurrency(selected.currency || 'ZMW');
-                                setAddress(selected.billingAddress || (selected as any).address || '');
-                            }
-                        }} Icon={User}>
-                            <option value="">Select Supplier...</option>
-                            {allSuppliers.filter(s => (!s.inactive && s.status !== 'Inactive') || s.name === supplier).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </SelectField>
-                        <InputField label="Description" value={description} onChange={(e: any) => setDescription(e.target.value)} placeholder="Summary of request..." Icon={Briefcase} />
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 border-t border-slate-50">
+                    <SelectField label="Supplier" value={supplier} onChange={(e: any) => {
+                        setSupplier(e.target.value);
+                        const selected = allSuppliers.find(s => s.name === e.target.value);
+                        if (selected) {
+                            setCurrency(selected.currency || 'ZMW');
+                            setAddress(selected.billingAddress || (selected as any).address || '');
+                        }
+                    }} Icon={User}>
+                        <option value="">Select Supplier...</option>
+                        {allSuppliers.filter(s => (!s.inactive && s.status !== 'Inactive') || s.name === supplier).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    </SelectField>
+
+                    <SelectField label="Currency" value={currency} onChange={(e: any) => setCurrency(e.target.value)} Icon={Coins}>
+                        <option value="ZMW">ZMW - Zambian Kwacha</option>
+                        <option value="USD">USD - US Dollar</option>
+                        <option value="EUR">EUR - Euro</option>
+                        <option value="GBP">GBP - British Pound</option>
+                        <option value="ZAR">ZAR - South African Rand</option>
+                    </SelectField>
+
+                    <InputField label="Description" value={description} onChange={(e: any) => setDescription(e.target.value)} placeholder="Summary of request..." Icon={Briefcase} />
+                </div>
+
+                <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2 text-left">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Address</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Supplier Address</label>
                         <textarea
                             value={address}
                             onChange={(e) => setAddress(e.target.value)}
-                            rows={4}
+                            rows={3}
                             placeholder="Supplier address details..."
-                            className="w-full bg-slate-50 border border-slate-200 rounded-[24px] px-5 py-4 text-[13px] font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-[20px] px-5 py-3 text-[13px] font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none"
                         ></textarea>
                     </div>
                 </div>
@@ -404,20 +422,29 @@ const EditPurchaseQuoteView = () => {
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
-                                    {options.columnLineNumber && <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-10 text-center">#</th>}
-                                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider min-w-[180px]">ITEM</th>
-                                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider min-w-[160px]">DESCRIPTION</th>
-                                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-16 text-right">QTY</th>
-                                    <th className="px-6 py-4 w-10"></th>
+                                    {options.columnLineNumber && <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-10 text-center">#</th>}
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-28">MI CODE</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider min-w-[200px]">ITEM</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider min-w-[160px]">DESCRIPTION</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-24 text-right">QTY</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-32 text-right">UNIT PRICE ({currency})</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-32 text-right">TOTAL ({currency})</th>
+                                    <th className="px-5 py-4 w-10"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-left">
                                 {items.map((item, index) => {
                                     const invItem = inventoryItems.find(i => i.itemName === item.item || i.itemCode === item.item);
+                                    const lineTotal = (parseFloat(item.qty) || 0) * (parseFloat(item.unitPrice) || 0);
                                     return (
                                         <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
-                                            {options.columnLineNumber && <td className="px-6 py-5 text-center text-sm font-bold text-slate-300">{index + 1}</td>}
-                                            <td className="px-6 py-5">
+                                            {options.columnLineNumber && <td className="px-5 py-5 text-center text-sm font-bold text-slate-300">{index + 1}</td>}
+                                            <td className="px-5 py-5">
+                                                <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50/80 px-2 py-1 rounded">
+                                                    {invItem?.itemCode || (item as any).itemCode || '-'}
+                                                </span>
+                                            </td>
+                                            <td className="px-5 py-5">
                                                 <SearchableSelect
                                                     value={item.item}
                                                     onChange={(val) => {
@@ -426,16 +453,17 @@ const EditPurchaseQuoteView = () => {
                                                             ...i,
                                                             item: val,
                                                             description: selected ? (selected.description || val) : i.description,
+                                                            unitPrice: selected?.purchasePrice ? String(selected.purchasePrice) : i.unitPrice || '0',
                                                             unit: selected ? (selected.unitName || '') : i.unit
                                                         } : i));
                                                     }}
                                                     options={[
                                                         { label: 'Select Item', value: 'Select Item' },
-                                                        ...inventoryItems.map(i => ({ label: i.itemName, value: i.itemName }))
+                                                        ...inventoryItems.map(i => ({ label: `${i.itemCode ? `[${i.itemCode}] ` : ''}${i.itemName}`, value: i.itemName }))
                                                     ]}
                                                 />
                                             </td>
-                                            <td className="px-6 py-5">
+                                            <td className="px-5 py-5">
                                                 <textarea
                                                     value={item.description}
                                                     onChange={(e) => updateItem(item.id, 'description', e.target.value)}
@@ -444,7 +472,7 @@ const EditPurchaseQuoteView = () => {
                                                     className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-600 outline-none resize-none placeholder:text-slate-300 min-h-[20px] scrollbar-hide"
                                                 />
                                             </td>
-                                            <td className="px-6 py-5 relative group/qty text-right">
+                                            <td className="px-5 py-5 relative group/qty text-right">
                                                 <div className="flex flex-col items-end min-w-[60px]">
                                                     <input
                                                         type="text"
@@ -458,7 +486,20 @@ const EditPurchaseQuoteView = () => {
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-5">
+                                            <td className="px-5 py-5 text-right">
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    value={item.unitPrice}
+                                                    onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)}
+                                                    placeholder="0.00"
+                                                    className="w-full bg-transparent border-b border-dashed border-slate-300 p-1 text-sm font-bold text-right outline-none text-slate-700 tabular-nums focus:border-indigo-500"
+                                                />
+                                            </td>
+                                            <td className="px-5 py-5 text-right font-mono font-bold text-sm text-slate-800 tabular-nums">
+                                                {lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </td>
+                                            <td className="px-5 py-5">
                                                 <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                                                     <button
                                                         onClick={() => {
@@ -487,6 +528,16 @@ const EditPurchaseQuoteView = () => {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Total Summary */}
+                    <div className="flex justify-end pt-4 pr-6">
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 min-w-[280px] text-right space-y-1">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Estimated Total ({currency})</span>
+                            <span className="text-2xl font-black text-indigo-700 font-mono tracking-tight block">
+                                {currency} {items.reduce((sum, it) => sum + ((parseFloat(it.qty) || 0) * (parseFloat(it.unitPrice) || 0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                        </div>
                     </div>
 
 

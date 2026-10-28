@@ -140,6 +140,8 @@ const NewReceiptView = () => {
     const [paidByCustomerId, setPaidByCustomerId] = useState('');
     const [receivedIn, setReceivedIn] = useState('Account');
     const [receivedInAccount, setReceivedInAccount] = useState('');
+    const [division, setDivision] = useState('General');
+    const [availableDivisions, setAvailableDivisions] = useState<any[]>([]);
     const [description, setDescription] = useState('');
     const [saveError, setSaveError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -182,18 +184,20 @@ const NewReceiptView = () => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const [accs, txItems, custs, supps, currs] = await Promise.all([
+                const [accs, txItems, custs, supps, currs, divs] = await Promise.all([
                     apiService.getAccounts(),
                     apiService.getTransactionItems(),
                     apiService.getCustomers(),
                     apiService.getSuppliers(),
-                    apiService.getCurrencies().catch(() => [])
+                    apiService.getCurrencies().catch(() => []),
+                    apiService.getDivisions().catch(() => [])
                 ]);
                 setAccounts(accs);
                 setIncomeItems(txItems.filter((i: any) => i.type === 'Income'));
                 setCustomers(custs);
                 setSuppliers(supps);
                 setCurrencies(currs || []);
+                setAvailableDivisions(divs || []);
 
                 const banks = paymentAccounts(accs);
                 const arName = arAccountName(accs);
@@ -232,6 +236,7 @@ const NewReceiptView = () => {
                             setRateManual(true);
                         }
                         setReceivedInAccount(receipt.receivedInAccount || banks[0]?.name || '');
+                        if (receipt.division) setDivision(receipt.division);
                         setDescription(receipt.description || '');
                         if (receipt.items) {
                             setItems(receipt.items.map((it: any) => {
@@ -376,7 +381,7 @@ const NewReceiptView = () => {
             }
 
             if (item.role === 'settlement' && (field === 'total' || field === 'amount')) {
-                const applied = Object.values(allocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+                const applied = Object.values(allocations).reduce<number>((sum, v) => sum + (parseFloat(String(v)) || 0), 0);
                 const typed = parseFloat(newItem.total) || 0;
                 if (typed > applied + 0.009) {
                     const extra = (typed - applied).toFixed(2);
@@ -521,7 +526,7 @@ const NewReceiptView = () => {
             finalTotal -= whtAmount;
         }
         const outstanding = unpaidInvoices.reduce((sum, inv) => sum + invoiceDue(inv), 0);
-        const applied = Object.values(allocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+        const applied = Object.values(allocations).reduce<number>((sum, v) => sum + (parseFloat(String(v)) || 0), 0);
         const advanceAmt = items.filter((it) => it.role === 'advance').reduce((sum, it) => sum + (parseFloat(it.total) || 0), 0);
         const selectedCustomer = customers.find((c: any) => c.id === paidByCustomerId);
         return {
@@ -542,7 +547,7 @@ const NewReceiptView = () => {
         setSaveError('');
         const payer = paidByOptional || paidByContact;
         const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
-        const appliedTotal = Object.values(allocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+        const appliedTotal = Object.values(allocations).reduce<number>((sum, v) => sum + (parseFloat(String(v)) || 0), 0);
 
         if (paidByContact === 'Customer' && !paidByCustomerId) {
             setSaveError('Select who paid this receipt.');
@@ -611,6 +616,7 @@ const NewReceiptView = () => {
             date: date,
             paidByContact: payer,
             receivedInAccount: receivedInAccount,
+            division: division || 'General',
             description,
             amount: saveItems.reduce((sum, it) => sum + (it.total || 0), 0) || (parseFloat(fixedTotalValue) || 0),
             currency,
@@ -621,8 +627,8 @@ const NewReceiptView = () => {
                 account: it.account === 'Suspense' && appliedTotal > 0 ? arName : it.account,
             })),
             allocations: Object.entries(allocations)
-                .filter(([, amt]) => parseFloat(amt) > 0)
-                .map(([invoiceId, amt]) => ({ invoiceId, amount: parseFloat(amt) }))
+                .filter(([, amt]) => parseFloat(String(amt)) > 0)
+                .map(([invoiceId, amt]) => ({ invoiceId, amount: parseFloat(String(amt)) }))
         };
 
         try {
@@ -733,7 +739,7 @@ const NewReceiptView = () => {
                             }}
                         />
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Paid By</label>
                                 <div className="flex bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all group">
@@ -806,7 +812,15 @@ const NewReceiptView = () => {
                                     <div className="relative flex-1">
                                         <select
                                             value={receivedInAccount}
-                                            onChange={(e) => setReceivedInAccount(e.target.value)}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setReceivedInAccount(val);
+                                                const matched = accounts.find(a => a.name === val || a.id === val);
+                                                if (matched?.currency) {
+                                                    setCurrency(currencyCode(matched.currency));
+                                                    setRateManual(false);
+                                                }
+                                            }}
                                             className="w-full h-full bg-transparent pl-4 pr-8 py-3 text-[13px] font-semibold text-slate-700 outline-none appearance-none cursor-pointer"
                                         >
                                             <option value="">Select Account...</option>
@@ -820,6 +834,23 @@ const NewReceiptView = () => {
                                         </select>
                                         <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none transition-colors group-focus-within:text-indigo-500" />
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Division / Branch</label>
+                                <div className="relative group">
+                                    <select
+                                        value={division}
+                                        onChange={(e) => setDivision(e.target.value)}
+                                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-2xl px-5 pr-11 py-3 text-[13px] font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
+                                    >
+                                        <option value="General">General / Head Office</option>
+                                        {availableDivisions.map((d: any) => (
+                                            <option key={d.id} value={d.name}>{d.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none transition-colors group-focus-within:text-indigo-500" />
                                 </div>
                             </div>
                         </div>

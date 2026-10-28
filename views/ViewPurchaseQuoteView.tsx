@@ -74,7 +74,7 @@ const ViewPurchaseQuoteView = () => {
         return allSuppliers.find(s => s.name === supplierName);
     }, [quote, allSuppliers]);
 
-    const supplierEmail = supplierData?.email || (quote?.supplier && typeof quote.supplier === 'string' ? `${quote.supplier.toLowerCase().replace(/\s+/g, '.')}@example.com` : '');
+    const supplierEmail = supplierData?.email || '';
 
     const totals = useMemo(() => {
         if (!quote) return { subtotal: 0, tax: 0, total: 0, whtAmount: 0, lineCalcs: [] };
@@ -551,36 +551,79 @@ const ViewPurchaseQuoteView = () => {
                             <thead className="bg-slate-50 border-y border-gray-200 overflow-hidden text-right print-bg-slate-50">
                                 <tr>
                                     {dOptions.columnLineNumber !== false && <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-12">#</th>}
+                                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left w-28">MI Code</th>
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Item</th>
                                     <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Description</th>
-                                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Qty</th>
+                                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right w-20">Qty</th>
+                                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right w-28">Unit Price</th>
+                                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right w-28">Total</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {quote.items && quote.items.length > 0 ? quote.items.map((item: any, idx: number) => {
+                                    const inv = inventoryItems.find(i => i.id === item.itemId || i.itemName === item.itemName);
+                                    const miCode = item.itemCode || inv?.itemCode || '-';
+                                    const qty = Number(item.qty) || 0;
+                                    const unitPrice = Number(item.unitPrice) || 0;
+                                    const lineTotal = item.totalAmount !== undefined ? Number(item.totalAmount) : (qty * unitPrice);
                                     return (
                                         <tr key={idx}>
                                             {dOptions.columnLineNumber !== false && <td className="px-4 py-4 text-slate-400 font-medium text-[12px]">{idx + 1}</td>}
                                             <td className="px-4 py-4">
+                                                <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                                                    {miCode}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-4">
                                                 <p className="font-semibold text-slate-900">
-                                                    {item.itemName || (typeof item.item === 'object' ? item.item?.itemName : item.item) || inventoryItems.find(i => i.id === item.itemId)?.itemName || '-'}
+                                                    {item.itemName || (typeof item.item === 'object' ? item.item?.itemName : item.item) || inv?.itemName || '-'}
                                                 </p>
                                             </td>
                                             <td className="px-4 py-4">
                                                 <p className="text-gray-500">{item.description || '-'}</p>
                                             </td>
-                                            <td className="px-4 py-4 text-right font-medium">{item.qty} <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">{item.unit || ''}</span></td>
+                                            <td className="px-4 py-4 text-right font-medium">{qty} <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">{item.unit || ''}</span></td>
+                                            <td className="px-4 py-4 text-right font-mono text-slate-700">
+                                                {unitPrice > 0 ? unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                            </td>
+                                            <td className="px-4 py-4 text-right font-mono font-bold text-slate-900">
+                                                {lineTotal > 0 ? lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                            </td>
                                         </tr>
                                     );
                                 }) : (
                                     <tr>
                                         {dOptions.columnLineNumber !== false && <td className="px-4 py-5 text-slate-400 font-medium text-[12px]">1</td>}
+                                        <td className="px-4 py-5 font-mono text-xs text-slate-400">-</td>
                                         <td className="px-4 py-5 font-semibold text-slate-900">General Item</td>
                                         <td className="px-4 py-5 font-medium text-slate-500">{quote.description || '-'}</td>
                                         <td className="px-4 py-5 text-right font-medium">1</td>
+                                        <td className="px-4 py-5 text-right font-mono">-</td>
+                                        <td className="px-4 py-5 text-right font-mono font-bold">-</td>
                                     </tr>
                                 )}
                             </tbody>
+                            {(() => {
+                                const total = (quote.items || []).reduce((sum: number, it: any) => {
+                                    const qty = Number(it.qty) || 0;
+                                    const up = Number(it.unitPrice) || 0;
+                                    return sum + (it.totalAmount !== undefined ? Number(it.totalAmount) : (qty * up));
+                                }, 0);
+                                if (total <= 0 && Number(quote.amount || 0) <= 0) return null;
+                                const finalAmount = total > 0 ? total : Number(quote.amount || 0);
+                                return (
+                                    <tfoot>
+                                        <tr className="border-t-2 border-slate-300">
+                                            <td colSpan={dOptions.columnLineNumber !== false ? 6 : 5} className="px-4 py-3 text-right text-xs font-black uppercase tracking-wider text-slate-500">
+                                                Total ({quote.currency || 'ZMW'}):
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-black text-sm text-slate-900">
+                                                {quote.currency || 'ZMW'} {finalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                );
+                            })()}
                         </table>
                     </div>
 

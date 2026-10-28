@@ -303,6 +303,9 @@ export interface InventoryItem {
   totalValue: number;
   reorderLevel?: number;
   category?: string;
+  sellingPrice?: number;
+  purchasePrice?: number;
+  marginPercentage?: number;
   incomeAccount?: string;
   expenseAccount?: string;
   autoFillDescription?: boolean;
@@ -424,6 +427,14 @@ export interface FooterTemplate {
 }
 
 
+export interface SupplierBankDetails {
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
+  swiftCode?: string;
+  branchName?: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -449,6 +460,10 @@ export interface Supplier {
   purchaseInvoices?: number;
   goodsReceipts?: number;
   debitNotes?: number;
+  bankDetails?: SupplierBankDetails;
+  bank_details?: SupplierBankDetails;
+  productCategories?: string[];
+  product_categories?: string[];
 }
 
 export interface PurchaseOrder {
@@ -589,6 +604,9 @@ export interface Shipment {
   ctrNo?: string;
   freight?: string;
   truckNumber?: string;
+  etd?: string;
+  trackingReferenceNumber?: string;
+  landTransportRoute?: string;
 }
 
 

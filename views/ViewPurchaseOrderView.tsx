@@ -79,7 +79,7 @@ const ViewPurchaseOrderView = () => {
         return typeof order.supplier === 'string' ? order.supplier : (order.supplier as any)?.name || 'Unknown';
     }, [order]);
 
-    const supplierEmail = supplierData?.email || (supplierName ? `${supplierName.toLowerCase().replace(/\s+/g, '.')}@example.com` : '');
+    const supplierEmail = supplierData?.email || '';
 
     const totals = useMemo(() => {
         if (!order) return { subtotal: 0, tax: 0, total: 0, whtAmount: 0, lineCalcs: [] };

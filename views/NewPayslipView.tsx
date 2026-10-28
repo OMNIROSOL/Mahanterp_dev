@@ -5,6 +5,7 @@ import apiService from '../services/apiService';
 import Button from '../components/shared/Button';
 import DocumentAttachments from '../components/shared/DocumentAttachments';
 import DocumentPrintHeader, { DOCUMENT_PRINT_CSS } from '../components/shared/DocumentPrintHeader';
+import { formatDateDMY } from '../utils/dateUtils';
 
 type Line = {
   key: string;
@@ -262,6 +263,88 @@ const NewPayslipView = () => {
   const net = gross - deduction;
   const employee = employees.find((p) => p.id === employeeId) || saved?.employee;
 
+  const autoCalculateStatutory = async () => {
+    try {
+      const grossAmt = earnings.reduce((sum, line) => sum + (line.itemId ? earningAmount(line) : 0), 0);
+      if (grossAmt <= 0) {
+        alert('Please add at least one earnings line (e.g. Basic salary) with units and rate before calculating statutory deductions.');
+        return;
+      }
+      const res = await apiService.calculateStatutory({ grossPay: grossAmt });
+
+      const payeItem = items.find((i: any) => i.itemType === 'deduction' && /paye/i.test(i.name));
+      const napsaEEItem = items.find((i: any) => i.itemType === 'deduction' && /napsa/i.test(i.name));
+      const nhimaEEItem = items.find((i: any) => i.itemType === 'deduction' && /nhima/i.test(i.name));
+      const napsaERItem = items.find((i: any) => i.itemType === 'contribution' && /napsa/i.test(i.name));
+      const nhimaERItem = items.find((i: any) => i.itemType === 'contribution' && /nhima/i.test(i.name));
+      const sdlERItem = items.find((i: any) => i.itemType === 'contribution' && /sdl/i.test(i.name));
+
+      const newDeductions: Line[] = [
+        ...(payeItem && res.paye > 0 ? [{
+          key: `paye-${Date.now()}`,
+          itemId: payeItem.id,
+          description: 'PAYE Tax (Zambia statutory progressive)',
+          units: '',
+          unitPrice: '',
+          amount: String(res.paye),
+          division: '',
+        }] : []),
+        ...(napsaEEItem && res.napsaEmployee > 0 ? [{
+          key: `napsa-ee-${Date.now()}`,
+          itemId: napsaEEItem.id,
+          description: 'NAPSA (5% Employee, capped at ZMW 1,492)',
+          units: '',
+          unitPrice: '',
+          amount: String(res.napsaEmployee),
+          division: '',
+        }] : []),
+        ...(nhimaEEItem && res.nhimaEmployee > 0 ? [{
+          key: `nhima-ee-${Date.now()}`,
+          itemId: nhimaEEItem.id,
+          description: 'NHIMA (1% Employee)',
+          units: '',
+          unitPrice: '',
+          amount: String(res.nhimaEmployee),
+          division: '',
+        }] : []),
+      ];
+      setDeductions(newDeductions.length ? newDeductions : [blankLine()]);
+
+      const newContributions: Line[] = [
+        ...(napsaERItem && res.napsaEmployer > 0 ? [{
+          key: `napsa-er-${Date.now()}`,
+          itemId: napsaERItem.id,
+          description: 'NAPSA (5% Employer, capped at ZMW 1,492)',
+          units: '',
+          unitPrice: '',
+          amount: String(res.napsaEmployer),
+          division: '',
+        }] : []),
+        ...(nhimaERItem && res.nhimaEmployer > 0 ? [{
+          key: `nhima-er-${Date.now()}`,
+          itemId: nhimaERItem.id,
+          description: 'NHIMA (1% Employer)',
+          units: '',
+          unitPrice: '',
+          amount: String(res.nhimaEmployer),
+          division: '',
+        }] : []),
+        ...(sdlERItem && res.sdlEmployer > 0 ? [{
+          key: `sdl-er-${Date.now()}`,
+          itemId: sdlERItem.id,
+          description: 'Skills Development Levy (0.5% Employer)',
+          units: '',
+          unitPrice: '',
+          amount: String(res.sdlEmployer),
+          division: '',
+        }] : []),
+      ];
+      setContributions(newContributions.length ? newContributions : [blankLine()]);
+    } catch (err: any) {
+      alert('Failed to calculate statutory deductions: ' + (err?.response?.data?.error || err.message));
+    }
+  };
+
   const pack = (lines: Line[], lineType: string) =>
     lines
       .filter((line) => line.itemId)
@@ -371,106 +454,316 @@ const NewPayslipView = () => {
 
       <div className={`max-w-5xl mx-auto p-6 ${readOnly ? 'print-container' : ''}`}>
         <div className={`bg-white border border-slate-200 rounded-3xl p-8 space-y-8 ${readOnly ? 'document-print-sheet' : ''}`}>
-          {readOnly && <DocumentPrintHeader title={title} reference={reference || undefined} />}
-          {!readOnly && <h1 className="text-2xl font-black text-slate-900 tracking-tight">{id ? 'Edit payslip' : 'New payslip'}</h1>}
-          {error && <p className="no-print text-sm font-semibold text-rose-600">{error}</p>}
+          {readOnly ? (
+            <div className="space-y-6">
+              <DocumentPrintHeader title={title} reference={reference || undefined} />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <label className="space-y-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</span>
-              <input type="date" disabled={readOnly} value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-70" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
-                Reference
-                <span className="normal-case tracking-normal font-semibold text-slate-500 inline-flex items-center gap-1">
-                  <input type="checkbox" disabled={readOnly} checked={useReference} onChange={(e) => setUseReference(e.target.checked)} /> Optional
-                </span>
-              </span>
-              <input
-                disabled={readOnly || !useReference}
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Description</span>
-              <input disabled={readOnly} value={description} onChange={(e) => setDescription(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-70" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Employee</span>
-              <select disabled={readOnly} value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-70">
-                <option value="">Select employee</option>
-                {employees.map((person) => (
-                  <option key={person.id} value={person.id}>{person.name}{person.code ? ` (${person.code})` : ''}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <LinesEditor title="Earnings" hint="Amount is units × unit price, in ZMW." kind="earning" lines={earnings} items={items} divisions={divisions} readOnly={readOnly} onChange={setEarnings} />
-          <LinesEditor title="Deductions" hint="PAYE, NAPSA employee and NHIMA employee. Flat amount in ZMW." kind="deduction" lines={deductions} items={items} divisions={divisions} readOnly={readOnly} onChange={setDeductions} />
-          <LinesEditor title="Contributions" hint="Employer NAPSA and NHIMA. These do not change net pay." kind="contribution" lines={contributions} items={items} divisions={divisions} readOnly={readOnly} onChange={setContributions} />
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 rounded-2xl p-5 print-bg-slate-50">
-            {[
-              ['Gross pay', gross],
-              ['Deduction', deduction],
-              ['Net pay', net],
-              ['Contribution', contribution],
-            ].map(([label, value]) => (
-              <div key={String(label)}>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-                <p className="text-lg font-black text-slate-800">ZMW {money(value as number)}</p>
-              </div>
-            ))}
-          </div>
-
-          {readOnly && showPeriodTotals && periodTotals && (
-            <div className="space-y-2">
-              <h2 className="text-sm font-black uppercase tracking-widest text-slate-800">Totals for the period</h2>
-              <p className="text-[12px] text-slate-400">Calendar year through this payslip, for this employee.</p>
-              {(['earnings', 'deductions', 'contributions'] as const).map((key) => (
-                <div key={key}>
-                  {(periodTotals[key] || []).map((row: any) => (
-                    <div key={row.name} className="flex justify-between text-sm py-1 border-b border-slate-100">
-                      <span className="text-slate-600">{row.name}</span>
-                      <span className="font-bold">{money(row.amount)}</span>
-                    </div>
-                  ))}
+              {/* Zambian Employee Profile Voucher Card */}
+              <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Employee Name</span>
+                    <span className="font-bold text-slate-800 text-sm">{employee?.name || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Employee Code</span>
+                    <span className="font-bold text-slate-700">{employee?.code || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Payslip Date</span>
+                    <span className="font-bold text-slate-700">{formatDateDMY(date)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">NRC Number</span>
+                    <span className="font-bold text-slate-700">{employee?.nrc || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">TPIN</span>
+                    <span className="font-bold text-slate-700">{employee?.tpin || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">NAPSA Number</span>
+                    <span className="font-bold text-slate-700">{employee?.napsaNumber || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">NHIMA Number</span>
+                    <span className="font-bold text-slate-700">{employee?.nhimaNumber || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Department / Job</span>
+                    <span className="font-bold text-slate-700">{[employee?.department, employee?.jobTitle].filter(Boolean).join(' · ') || '—'}</span>
+                  </div>
                 </div>
-              ))}
-              <p className="text-sm font-black text-slate-800 pt-2">Period net pay ZMW {money(periodTotals.netPay)}</p>
-            </div>
-          )}
+                {employee?.bankAccount && (
+                  <div className="mt-3 pt-3 border-t border-slate-200/60 text-xs flex flex-wrap gap-6">
+                    <div>
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Bank: </span>
+                      <span className="font-semibold text-slate-700">{employee.bankName || 'Direct Transfer'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Account No: </span>
+                      <span className="font-semibold text-slate-700">{employee.bankAccount}</span>
+                    </div>
+                    {employee.bankBranch && (
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Branch: </span>
+                        <span className="font-semibold text-slate-700">{employee.bankBranch}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
-          <div className="no-print space-y-3 text-sm text-slate-600">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" disabled={readOnly} checked={showPeriodTotals} onChange={(e) => setShowPeriodTotals(e.target.checked)} />
-              Show totals for the period
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" disabled={readOnly} checked={customTitle} onChange={(e) => setCustomTitle(e.target.checked)} />
-              Custom title
-            </label>
-            {customTitle && (
-              <input disabled={readOnly} value={customTitleValue} onChange={(e) => setCustomTitleValue(e.target.value)} placeholder="Title printed on the payslip" className="w-full max-w-md bg-slate-50 border border-slate-200 rounded-xl px-3 py-2" />
-            )}
-            <label className="flex items-center gap-2">
-              <input type="checkbox" disabled={readOnly} checked={useFooter} onChange={(e) => setUseFooter(e.target.checked)} />
-              Footers
-            </label>
-            {useFooter && (
-              <select disabled={readOnly} value={footerValue} onChange={(e) => setFooterValue(e.target.value)} className="w-full max-w-md bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                <option value="">Select a footer</option>
-                {footers.map((footer) => (
-                  <option key={footer.id} value={footer.content || footer.name}>{footer.name}</option>
+              {/* Earnings Table */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-700 border-b pb-1">Earnings</h3>
+                <table className="w-full text-sm">
+                  <thead className="text-[10px] font-black uppercase text-slate-400 bg-slate-50">
+                    <tr>
+                      <th className="text-left py-2 px-3">Item</th>
+                      <th className="text-left py-2 px-3">Description</th>
+                      <th className="text-right py-2 px-3">Units</th>
+                      <th className="text-right py-2 px-3">Rate (ZMW)</th>
+                      <th className="text-right py-2 px-3">Amount (ZMW)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {earnings.filter(l => l.itemId).map((l, i) => {
+                      const itemObj = items.find(it => it.id === l.itemId);
+                      return (
+                        <tr key={i}>
+                          <td className="py-2 px-3 font-semibold text-slate-800">{itemObj?.name || '—'}</td>
+                          <td className="py-2 px-3 text-slate-600">{l.description || '—'}</td>
+                          <td className="py-2 px-3 text-right">{l.units || '1'}</td>
+                          <td className="py-2 px-3 text-right">{l.unitPrice ? money(l.unitPrice) : '—'}</td>
+                          <td className="py-2 px-3 text-right font-bold text-slate-900">{money(earningAmount(l))}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t-2 border-slate-200 bg-slate-50/50 font-black">
+                    <tr>
+                      <td colSpan={4} className="py-2 px-3 text-right uppercase text-xs text-slate-600">Total Gross Pay:</td>
+                      <td className="py-2 px-3 text-right text-indigo-700 text-sm">ZMW {money(gross)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Deductions Table */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-700 border-b pb-1">Deductions</h3>
+                <table className="w-full text-sm">
+                  <thead className="text-[10px] font-black uppercase text-slate-400 bg-slate-50">
+                    <tr>
+                      <th className="text-left py-2 px-3">Item</th>
+                      <th className="text-left py-2 px-3">Description</th>
+                      <th className="text-right py-2 px-3">Amount (ZMW)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {deductions.filter(l => l.itemId).map((l, i) => {
+                      const itemObj = items.find(it => it.id === l.itemId);
+                      return (
+                        <tr key={i}>
+                          <td className="py-2 px-3 font-semibold text-slate-800">{itemObj?.name || '—'}</td>
+                          <td className="py-2 px-3 text-slate-600">{l.description || '—'}</td>
+                          <td className="py-2 px-3 text-right font-bold text-rose-600">{money(l.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t-2 border-slate-200 bg-slate-50/50 font-black">
+                    <tr>
+                      <td colSpan={2} className="py-2 px-3 text-right uppercase text-xs text-slate-600">Total Deductions:</td>
+                      <td className="py-2 px-3 text-right text-rose-600 text-sm">ZMW {money(deduction)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Net Pay Callout Banner */}
+              <div className="p-4 rounded-2xl bg-indigo-50 border-2 border-indigo-200 flex justify-between items-center print-bg-indigo-50">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500 block">Take Home Pay</span>
+                  <span className="text-2xl font-black text-indigo-900 tracking-tight">NET PAY</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-black text-indigo-900">ZMW {money(net)}</span>
+                </div>
+              </div>
+
+              {/* Employer Contributions Table */}
+              {contributions.filter(l => l.itemId).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-700 border-b pb-1">Employer Contributions (Statistical)</h3>
+                  <table className="w-full text-sm">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 bg-slate-50">
+                      <tr>
+                        <th className="text-left py-2 px-3">Item</th>
+                        <th className="text-left py-2 px-3">Description</th>
+                        <th className="text-right py-2 px-3">Amount (ZMW)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {contributions.filter(l => l.itemId).map((l, i) => {
+                        const itemObj = items.find(it => it.id === l.itemId);
+                        return (
+                          <tr key={i}>
+                            <td className="py-2 px-3 font-semibold text-slate-800">{itemObj?.name || '—'}</td>
+                            <td className="py-2 px-3 text-slate-600">{l.description || '—'}</td>
+                            <td className="py-2 px-3 text-right font-bold text-slate-700">{money(l.amount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="border-t-2 border-slate-200 bg-slate-50/50 font-black">
+                      <tr>
+                        <td colSpan={2} className="py-2 px-3 text-right uppercase text-xs text-slate-600">Total Employer Contributions:</td>
+                        <td className="py-2 px-3 text-right text-slate-800 text-sm">ZMW {money(contribution)}</td>
+                      </tr>
+                      <tr>
+                        <td colSpan={2} className="py-2 px-3 text-right uppercase text-xs text-slate-600">Total Cost to Company (CTC):</td>
+                        <td className="py-2 px-3 text-right text-slate-900 text-sm">ZMW {money(gross + contribution)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* Period Totals if active */}
+              {showPeriodTotals && periodTotals && (
+                <div className="space-y-2 pt-4 border-t border-slate-200">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">Year-to-Date Period Totals</h3>
+                  <div className="grid grid-cols-3 gap-4 text-xs bg-slate-50 p-4 rounded-xl">
+                    <div>
+                      <span className="text-[10px] font-black uppercase text-slate-400 block">YTD Gross Pay</span>
+                      <span className="font-bold text-slate-800">ZMW {money(periodTotals.grossPay)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase text-slate-400 block">YTD Deductions</span>
+                      <span className="font-bold text-rose-600">ZMW {money(periodTotals.deduction)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase text-slate-400 block">YTD Net Pay</span>
+                      <span className="font-bold text-indigo-700">ZMW {money(periodTotals.netPay)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Signatures for Manager.io Parity */}
+              <div className="pt-12 grid grid-cols-3 gap-8 text-xs text-slate-600">
+                <div className="border-t border-slate-300 pt-2 text-center">
+                  <p className="font-bold text-slate-700">Prepared By</p>
+                  <p className="text-[10px] text-slate-400 mt-1">HR / Payroll Dept</p>
+                </div>
+                <div className="border-t border-slate-300 pt-2 text-center">
+                  <p className="font-bold text-slate-700">Approved By</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Managing Director</p>
+                </div>
+                <div className="border-t border-slate-300 pt-2 text-center">
+                  <p className="font-bold text-slate-700">Employee Signature</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Received & Acknowledged</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">{id ? 'Edit payslip' : 'New payslip'}</h1>
+                <button
+                  type="button"
+                  onClick={autoCalculateStatutory}
+                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm active:translate-y-0.5"
+                >
+                  ⚡ Auto-calculate Statutory Deductions (PAYE, NAPSA, NHIMA, SDL)
+                </button>
+              </div>
+
+              {error && <p className="no-print text-sm font-semibold text-rose-600">{error}</p>}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <label className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</span>
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
+                    Reference
+                    <span className="normal-case tracking-normal font-semibold text-slate-500 inline-flex items-center gap-1">
+                      <input type="checkbox" checked={useReference} onChange={(e) => setUseReference(e.target.checked)} /> Optional
+                    </span>
+                  </span>
+                  <input
+                    disabled={!useReference}
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    placeholder={useReference ? "Custom payslip reference..." : ""}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Description</span>
+                  <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Salary for October 2026" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Employee</span>
+                  <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold cursor-pointer">
+                    <option value="">Select employee...</option>
+                    {employees.map((person) => (
+                      <option key={person.id} value={person.id}>{person.name}{person.code ? ` (${person.code})` : ''}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <LinesEditor title="Earnings" hint="Amount is units × unit price, in ZMW." kind="earning" lines={earnings} items={items} divisions={divisions} readOnly={false} onChange={setEarnings} />
+              <LinesEditor title="Deductions" hint="PAYE, NAPSA employee, NHIMA employee, advances, etc. Flat amount in ZMW." kind="deduction" lines={deductions} items={items} divisions={divisions} readOnly={false} onChange={setDeductions} />
+              <LinesEditor title="Contributions" hint="Employer NAPSA, NHIMA, and SDL. These do not reduce employee net pay." kind="contribution" lines={contributions} items={items} divisions={divisions} readOnly={false} onChange={setContributions} />
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 rounded-2xl p-5 print-bg-slate-50">
+                {[
+                  ['Gross pay', gross],
+                  ['Deduction', deduction],
+                  ['Net pay', net],
+                  ['Contribution', contribution],
+                ].map(([label, value]) => (
+                  <div key={String(label)}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                    <p className="text-lg font-black text-slate-800">ZMW {money(value as number)}</p>
+                  </div>
                 ))}
-              </select>
-            )}
-          </div>
-          {useFooter && footerValue && <p className="text-sm text-slate-500 whitespace-pre-wrap border-t border-slate-100 pt-4">{footerValue}</p>}
+              </div>
+
+              <div className="space-y-3 text-sm text-slate-600 pt-2 border-t border-slate-100">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={showPeriodTotals} onChange={(e) => setShowPeriodTotals(e.target.checked)} />
+                  Show totals for the period
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={customTitle} onChange={(e) => setCustomTitle(e.target.checked)} />
+                  Custom title
+                </label>
+                {customTitle && (
+                  <input value={customTitleValue} onChange={(e) => setCustomTitleValue(e.target.value)} placeholder="Title printed on the payslip" className="w-full max-w-md bg-slate-50 border border-slate-200 rounded-xl px-3 py-2" />
+                )}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={useFooter} onChange={(e) => setUseFooter(e.target.checked)} />
+                  Footers
+                </label>
+                {useFooter && (
+                  <select value={footerValue} onChange={(e) => setFooterValue(e.target.value)} className="w-full max-w-md bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    <option value="">Select a footer</option>
+                    {footers.map((footer) => (
+                      <option key={footer.id} value={footer.content || footer.name}>{footer.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {useFooter && footerValue && <p className="text-sm text-slate-500 whitespace-pre-wrap border-t border-slate-100 pt-4">{footerValue}</p>}
+            </>
+          )}
 
           <DocumentAttachments
             documentType="payslip"
@@ -478,7 +771,7 @@ const NewPayslipView = () => {
             pendingFiles={pendingFiles}
             onPendingFilesChange={setPendingFiles}
             readOnly={readOnly}
-            title="Image"
+            title="Image / Attachments"
             hint="One scan or photo — PDF, JPG or PNG, max 10MB"
           />
         </div>

@@ -20,7 +20,10 @@ import {
   Upload,
   Moon,
   Sun,
-  Monitor
+  Monitor,
+  Lock,
+  Scale,
+  SlidersHorizontal
 } from 'lucide-react';
 import Card from '../components/shared/Card';
 import { AppUser } from '../types';
@@ -104,6 +107,33 @@ const SettingsView = () => {
           path: '/accounts',
           color: 'text-slate-700',
           bgColor: 'bg-slate-50'
+        },
+        {
+          id: 'lock-date',
+          label: 'Lock Date',
+          description: 'Prevent transactions on or before a specified date from being altered',
+          icon: Lock,
+          path: '/settings/lock-date',
+          color: 'text-amber-600',
+          bgColor: 'bg-amber-50'
+        },
+        {
+          id: 'starting-balances',
+          label: 'Starting Balances',
+          description: 'Set opening debit and credit balances for accounts as of the conversion date',
+          icon: Scale,
+          path: '/settings/starting-balances',
+          color: 'text-indigo-600',
+          bgColor: 'bg-indigo-50'
+        },
+        {
+          id: 'bank-rules',
+          label: 'Bank Rules',
+          description: 'Automated rules for categorizing bank statement transaction descriptions',
+          icon: SlidersHorizontal,
+          path: '/settings/bank-rules',
+          color: 'text-blue-600',
+          bgColor: 'bg-blue-50'
         },
       ]
     },

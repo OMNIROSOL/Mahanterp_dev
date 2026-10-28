@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Eye, Edit, ChevronRight, LayoutGrid, HelpCircle, Receipt, Search } from 'lucide-react';
 import apiService from '../services/apiService';
 import { Customer } from '../types';
+import { formatDateDMY } from '../utils/dateUtils';
 
 const CustomerTransactionsView = () => {
     const { id } = useParams();
@@ -128,8 +129,19 @@ const CustomerTransactionsView = () => {
                         <tbody className="divide-y divide-slate-100 text-slate-700">
                             {filteredTransactions.map((t) => {
                                 const isReceipt = t.transaction.startsWith('Receipt');
-                                const viewPath = isReceipt ? `/receipts/view/${t.id}` : `/sales-invoices/view/${t.id}`;
-                                const editPath = isReceipt ? `/receipts/edit/${t.id}` : `/sales-invoices/edit/${t.id}`;
+                                const isCreditNote = t.transaction.startsWith('Credit Note');
+                                const viewPath = isReceipt
+                                    ? `/receipts/view/${t.id}`
+                                    : isCreditNote
+                                    ? `/credit-notes/view/${t.id}`
+                                    : `/sales-invoices/view/${t.id}`;
+                                const editPath = isReceipt
+                                    ? `/receipts/edit/${t.id}`
+                                    : isCreditNote
+                                    ? `/credit-notes/edit/${t.id}`
+                                    : `/sales-invoices/edit/${t.id}`;
+
+                                const money = (v: number) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
                                 return (
                                     <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
@@ -138,20 +150,20 @@ const CustomerTransactionsView = () => {
                                                 <button
                                                     onClick={() => navigate(viewPath)}
                                                     className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                                                    title={isReceipt ? 'View Receipt' : 'View Invoice'}
+                                                    title={isReceipt ? 'View Receipt' : isCreditNote ? 'View Credit Note' : 'View Invoice'}
                                                 >
                                                     <Eye size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => navigate(editPath)}
                                                     className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
-                                                    title={isReceipt ? 'Edit Receipt' : 'Edit Invoice'}
+                                                    title={isReceipt ? 'Edit Receipt' : isCreditNote ? 'Edit Credit Note' : 'Edit Invoice'}
                                                 >
                                                     <Edit size={14} />
                                                 </button>
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 border-r border-slate-100 whitespace-nowrap">{t.date}</td>
+                                        <td className="px-4 py-3 border-r border-slate-100 whitespace-nowrap">{formatDateDMY(t.date)}</td>
                                         <td className="px-4 py-3 border-r border-slate-100">
                                             <div className="max-w-xs overflow-hidden text-ellipsis whitespace-nowrap font-medium" title={t.transaction}>
                                                 {t.transaction}
@@ -160,11 +172,11 @@ const CustomerTransactionsView = () => {
                                         <td className="px-4 py-3 border-r border-slate-100">{t.customer}</td>
                                         <td className="px-4 py-3 border-r border-slate-100 text-[12px]">{t.bankAccount || '—'}</td>
                                         <td className="px-4 py-3 border-r border-slate-100 text-[12px]">{t.description}</td>
-                                        <td className={`px-4 py-3 text-right border-r border-slate-100 font-bold whitespace-nowrap ${t.amount < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                            {t.amount < 0 ? `- ${t.currency}` : t.currency} {Math.abs(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        <td className={`px-4 py-3 text-right border-r border-slate-100 font-bold whitespace-nowrap ${t.amount < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                                            {t.amount < 0 ? `- ${t.currency} ${money(Math.abs(t.amount))}` : `${t.currency} ${money(t.amount)}`}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-slate-400 font-medium">
-                                            {t.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        <td className="px-4 py-3 text-right text-slate-900 font-bold">
+                                            {t.currency || 'ZMW'} {money(t.balance)}
                                         </td>
                                     </tr>
                                 );

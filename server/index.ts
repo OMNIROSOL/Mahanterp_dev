@@ -1,4 +1,5 @@
 import 'dotenv/config';
+process.env.TZ = 'Africa/Lusaka';
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -19,6 +20,9 @@ import {
   postCreditNote,
   postDebitNote,
   postInventoryWriteOff,
+  postJournalEntryDoc,
+  syncSalesInvoiceStock,
+  syncPurchaseInvoiceStock,
   reverseJournal,
   reversePaymentAllocations,
   signedBalance,
@@ -34,7 +38,7 @@ import { currencyCode, ensureMultiCurrencyColumns, resolveRateAtDate } from './c
 import { employeePayload, ensureHrTables } from './hr';
 import { ensurePayrollTables, registerPayrollRoutes } from './payroll';
 import { registerMilReportRoutes } from './milReports';
-import { ensurePhase5Tables, registerPhase5Routes } from './phase5';
+import { ensurePhase5Tables, registerPhase5Routes, checkLockDate } from './phase5';
 
 const app = express();
 console.log('Connecting to DB:', process.env.DATABASE_URL ? 'URL found' : 'URL MISSING');
@@ -811,8 +815,10 @@ const generateNextReference = async (type: string, tx: any = prisma) => {
     case 'inventory-write-off': count = await getNextNum(tx.inventoryWriteOff, 'WO-'); prefix = 'WO'; break;
     case 'goods-received-note': count = await getNextNum(tx.goodsReceivedNote, 'GRN-'); prefix = 'GRN'; break;
     case 'inter-account-transfer': count = await getNextNum(tx.interAccountTransfer, 'IAT-'); prefix = 'IAT'; break;
-    case 'debit-note': prefix = 'DN'; count = Math.floor(Math.random() * 1000); break;
-    case 'credit-note': prefix = 'CN'; count = Math.floor(Math.random() * 1000); break;
+    case 'journal-entry':
+    case 'journal': count = await getNextNum(tx.journalEntry, 'JE-'); prefix = 'JE'; break;
+    case 'debit-note': count = await getNextNum(tx.debitNote, 'DN-'); prefix = 'DN'; break;
+    case 'credit-note': count = await getNextNum(tx.creditNote, 'CN-'); prefix = 'CN'; break;
     default: throw new Error('Invalid document type');
   }
 
@@ -921,11 +927,12 @@ app.get('/api/customers/:id/invoices', async (req, res) => {
 });
 
 app.post('/api/customers', async (req, res) => {
-  const data = req.body;
   try {
+    const data = req.body;
+    const customerCode = data.code || await generateNextReference('customer');
     const result = await prisma.customer.create({
       data: {
-        code: data.code,
+        code: customerCode,
         name: data.name,
         email: data.email,
         currency: data.currency,
@@ -968,8 +975,8 @@ app.get('/api/customers/:id/transactions', async (req, res) => {
         transaction: `Invoice - ${inv.reference || ''}`,
         customer: customer.name,
         bankAccount: null,
-        description: '',
-        amount: -(Number(inv.grandTotal) || 0),
+        description: (inv as any).description || '',
+        amount: Number(inv.grandTotal) || 0,
         currency: inv.currency || customer.currency,
       });
     }
@@ -984,7 +991,7 @@ app.get('/api/customers/:id/transactions', async (req, res) => {
         customer: customer.name,
         bankAccount: rec.receivedInAccount || '',
         description: rec.description || '',
-        amount: Number(rec.amount) || 0,
+        amount: -(Number(rec.amount) || 0),
         currency: rec.currency || customer.currency,
       });
     }
@@ -999,7 +1006,7 @@ app.get('/api/customers/:id/transactions', async (req, res) => {
         customer: customer.name,
         bankAccount: null,
         description: cn.description || '',
-        amount: Number(cn.grandTotal) || 0,
+        amount: -(Number(cn.grandTotal) || 0),
         currency: cn.currency || customer.currency,
       });
     }
@@ -1017,6 +1024,252 @@ app.get('/api/customers/:id/transactions', async (req, res) => {
     res.json(transactions);
   } catch (err: any) {
     console.error('Customer transactions error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customers/:id/statement', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const customer = await prisma.customer.findUnique({ where: { id } });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const formatToDMY = (d: Date | string | null | undefined): string => {
+      if (!d) return '';
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return '';
+      const day = String(dt.getDate()).padStart(2, '0');
+      const month = String(dt.getMonth() + 1).padStart(2, '0');
+      const year = dt.getFullYear();
+      return `${day}.${month}.${year}`;
+    };
+
+    const fromQuery = req.query.from ? new Date(String(req.query.from)) : null;
+    const toQuery = req.query.to ? new Date(String(req.query.to)) : null;
+    if (toQuery) toQuery.setHours(23, 59, 59, 999);
+
+    const [invoices, receipts, creditNotes] = await Promise.all([
+      prisma.invoice.findMany({ where: { customerId: id }, orderBy: { createdAt: 'asc' } }),
+      prisma.receipt.findMany({ where: { paidByContact: customer.name }, orderBy: { createdAt: 'asc' } }),
+      prisma.creditNote.findMany({ where: { customerId: id }, orderBy: { createdAt: 'asc' } })
+    ]);
+
+    const allTx: any[] = [];
+    for (const inv of invoices) {
+      if (inv.status === 'Draft') continue;
+      const invDate = inv.issueDate || inv.createdAt || new Date();
+      allTx.push({
+        id: inv.id,
+        dateObj: new Date(invDate),
+        date: formatToDMY(invDate),
+        transactionType: 'Sales Invoice',
+        reference: inv.reference || '',
+        description: (inv.docOptions as any)?.description || '',
+        debit: Number(inv.grandTotal || 0),
+        credit: 0
+      });
+    }
+
+    for (const rec of receipts) {
+      const recDate = rec.date || rec.createdAt || new Date();
+      allTx.push({
+        id: rec.id,
+        dateObj: new Date(recDate),
+        date: formatToDMY(recDate),
+        transactionType: 'Receipt',
+        reference: rec.reference || '',
+        description: rec.description || '',
+        debit: 0,
+        credit: Number(rec.amount || 0)
+      });
+    }
+
+    for (const cn of creditNotes) {
+      const cnDate = cn.issueDate || cn.createdAt || new Date();
+      allTx.push({
+        id: cn.id,
+        dateObj: new Date(cnDate),
+        date: formatToDMY(cnDate),
+        transactionType: 'Credit Note',
+        reference: cn.reference || '',
+        description: cn.description || '',
+        debit: 0,
+        credit: Number(cn.grandTotal || 0)
+      });
+    }
+
+    allTx.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+
+    let openingBal = 0;
+    const periodTx: any[] = [];
+
+    for (const tx of allTx) {
+      if (fromQuery && tx.dateObj < fromQuery) {
+        openingBal += tx.debit - tx.credit;
+      } else if (!toQuery || tx.dateObj <= toQuery) {
+        periodTx.push(tx);
+      }
+    }
+
+    let running = openingBal;
+    for (const tx of periodTx) {
+      running += tx.debit - tx.credit;
+      tx.runningBalance = Math.round(running * 100) / 100;
+      tx.balanceDrCr = running >= 0 
+        ? `${Math.abs(running).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dr`
+        : `${Math.abs(running).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
+    }
+
+    const totalDebits = periodTx.reduce((s, t) => s + t.debit, 0);
+    const totalCredits = periodTx.reduce((s, t) => s + t.credit, 0);
+    const closingBal = running;
+
+    res.json({
+      party: customer,
+      partyType: 'Customer',
+      currency: customer.currency || 'ZMW',
+      period: {
+        from: fromQuery ? formatToDMY(fromQuery) : (allTx[0] ? allTx[0].date : ''),
+        to: toQuery ? formatToDMY(toQuery) : formatToDMY(new Date())
+      },
+      openingBalance: Math.round(openingBal * 100) / 100,
+      openingBalanceDrCr: openingBal >= 0 
+        ? `${Math.abs(openingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dr`
+        : `${Math.abs(openingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`,
+      transactions: periodTx,
+      totalDebits: Math.round(totalDebits * 100) / 100,
+      totalCredits: Math.round(totalCredits * 100) / 100,
+      netMovement: Math.round((totalDebits - totalCredits) * 100) / 100,
+      closingBalance: Math.round(closingBal * 100) / 100,
+      closingBalanceDrCr: closingBal >= 0
+        ? `${Math.abs(closingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dr`
+        : `${Math.abs(closingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`
+    });
+  } catch (err: any) {
+    console.error('Customer statement error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/suppliers/:id/statement', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const supplier = await prisma.suppliers.findUnique({ where: { id } });
+    if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+
+    const formatToDMY = (d: Date | string | null | undefined): string => {
+      if (!d) return '';
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return '';
+      const day = String(dt.getDate()).padStart(2, '0');
+      const month = String(dt.getMonth() + 1).padStart(2, '0');
+      const year = dt.getFullYear();
+      return `${day}.${month}.${year}`;
+    };
+
+    const fromQuery = req.query.from ? new Date(String(req.query.from)) : null;
+    const toQuery = req.query.to ? new Date(String(req.query.to)) : null;
+    if (toQuery) toQuery.setHours(23, 59, 59, 999);
+
+    const [invoices, payments, debitNotes] = await Promise.all([
+      prisma.invoices.findMany({ where: { supplier_id: id }, orderBy: { created_at: 'asc' } }),
+      prisma.payment.findMany({ where: { paidToContact: supplier.name }, orderBy: { createdAt: 'asc' } }),
+      prisma.debitNote.findMany({ where: { supplierId: id }, orderBy: { createdAt: 'asc' } })
+    ]);
+
+    const allTx: any[] = [];
+    for (const inv of invoices) {
+      if (inv.status === 'Draft') continue;
+      const invDate = inv.created_at || new Date();
+      allTx.push({
+        id: inv.id,
+        dateObj: new Date(invDate),
+        date: formatToDMY(invDate),
+        transactionType: 'Purchase Invoice',
+        reference: inv.reference || '',
+        description: inv.description || '',
+        debit: 0,
+        credit: Number(inv.grand_total || 0)
+      });
+    }
+
+    for (const p of payments) {
+      const pDate = p.date || p.createdAt || new Date();
+      allTx.push({
+        id: p.id,
+        dateObj: new Date(pDate),
+        date: formatToDMY(pDate),
+        transactionType: 'Payment',
+        reference: p.reference || '',
+        description: p.description || '',
+        debit: Number(p.amount || 0),
+        credit: 0
+      });
+    }
+
+    for (const dn of debitNotes) {
+      const dnDate = dn.issueDate || dn.createdAt || new Date();
+      allTx.push({
+        id: dn.id,
+        dateObj: new Date(dnDate),
+        date: formatToDMY(dnDate),
+        transactionType: 'Debit Note',
+        reference: dn.reference || '',
+        description: dn.description || '',
+        debit: Number(dn.amount || (dn as any).grandTotal || 0),
+        credit: 0
+      });
+    }
+
+    allTx.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+
+    let openingBal = 0; // Credit positive
+    const periodTx: any[] = [];
+
+    for (const tx of allTx) {
+      if (fromQuery && tx.dateObj < fromQuery) {
+        openingBal += tx.credit - tx.debit;
+      } else if (!toQuery || tx.dateObj <= toQuery) {
+        periodTx.push(tx);
+      }
+    }
+
+    let running = openingBal;
+    for (const tx of periodTx) {
+      running += tx.credit - tx.debit;
+      tx.runningBalance = Math.round(running * 100) / 100;
+      tx.balanceDrCr = running >= 0
+        ? `${Math.abs(running).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`
+        : `${Math.abs(running).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dr`;
+    }
+
+    const totalDebits = periodTx.reduce((s, t) => s + t.debit, 0);
+    const totalCredits = periodTx.reduce((s, t) => s + t.credit, 0);
+    const closingBal = running;
+
+    res.json({
+      party: supplier,
+      partyType: 'Supplier',
+      currency: supplier.currency || 'ZMW',
+      period: {
+        from: fromQuery ? formatToDMY(fromQuery) : (allTx[0] ? allTx[0].date : ''),
+        to: toQuery ? formatToDMY(toQuery) : formatToDMY(new Date())
+      },
+      openingBalance: Math.round(openingBal * 100) / 100,
+      openingBalanceDrCr: openingBal >= 0
+        ? `${Math.abs(openingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`
+        : `${Math.abs(openingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dr`,
+      transactions: periodTx,
+      totalDebits: Math.round(totalDebits * 100) / 100,
+      totalCredits: Math.round(totalCredits * 100) / 100,
+      netMovement: Math.round((totalCredits - totalDebits) * 100) / 100,
+      closingBalance: Math.round(closingBal * 100) / 100,
+      closingBalanceDrCr: closingBal >= 0
+        ? `${Math.abs(closingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`
+        : `${Math.abs(closingBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dr`
+    });
+  } catch (err: any) {
+    console.error('Supplier statement error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1069,11 +1322,12 @@ app.get('/api/items', async (req, res) => {
     }
     
     const itemsWithAvgCost = items.map(item => {
-      const avgCost = latestCostMap.get(item.id) ?? 0;
+      const avgCost = latestCostMap.get(item.id) || Number(item.purchasePrice || 0);
       const qtyOnHandVal = Number(item.qtyOnHand) || 0;
       return {
         ...item,
         avgCost,
+        averageCost: avgCost,
         totalValue: qtyOnHandVal * avgCost
       };
     });
@@ -1101,12 +1355,13 @@ app.get('/api/items/:id', async (req, res) => {
       ]
     });
     
-    const avgCost = latestCost ? (Number(latestCost.unitCost) || 0) : 0;
+    const avgCost = latestCost ? (Number(latestCost.unitCost) || 0) : Number(item.purchasePrice || 0);
     const qtyOnHandVal = Number(item.qtyOnHand) || 0;
     
     res.json({
       ...item,
       avgCost,
+      averageCost: avgCost,
       totalValue: qtyOnHandVal * avgCost
     });
   } catch (err) {
@@ -1533,6 +1788,7 @@ app.get('/api/invoices/:id/transactions', async (req, res) => {
 app.post('/api/invoices', async (req, res) => {
   const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency, exchangeRate } = req.body;
   try {
+    await checkLockDate(prisma, issueDate);
     const code = currencyCode(currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.$transaction(async (tx) => {
@@ -1548,15 +1804,22 @@ app.post('/api/invoices', async (req, res) => {
           dueDate: parseDate(dueDate),
           docOptions: { ...(docOptions || {}), description, currency: code, exchangeRate: rate },
           items: {
-            create: items.map((item: any) => ({
-              itemId: item.itemId,
-              description: item.description,
-              qty: item.qty,
-              unitPrice: item.unitPrice,
-              discount: item.discount,
-              division: item.division,
-              tax_code_id: item.tax_code_id,
-              totalAmount: item.totalAmount
+            create: await Promise.all((items || []).map(async (item: any) => {
+              let taxCodeId = item.tax_code_id;
+              if (!taxCodeId && item.taxCode) {
+                const tc = await tx.tax_codes.findFirst({ where: { name: item.taxCode } });
+                taxCodeId = tc?.id;
+              }
+              return {
+                itemId: item.itemId,
+                description: item.description,
+                qty: Number(item.qty) || 0,
+                unitPrice: Number(item.unitPrice) || 0,
+                discount: item.discount ? Number(item.discount) : 0,
+                division: item.division || 'General',
+                tax_code_id: taxCodeId || null,
+                totalAmount: Number(item.totalAmount) || 0
+              };
             }))
           }
         },
@@ -1566,8 +1829,8 @@ app.post('/api/invoices', async (req, res) => {
       return invoice;
     });
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1575,6 +1838,7 @@ app.put('/api/invoices/:id', async (req, res) => {
   const { id } = req.params;
   const { customerId, reference, items, grandTotal, balanceDue, docOptions, dueDate, issueDate, description, currency, exchangeRate } = req.body;
   try {
+    await checkLockDate(prisma, issueDate);
     const code = currencyCode(currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.$transaction(async (tx) => {
@@ -1610,8 +1874,8 @@ app.put('/api/invoices/:id', async (req, res) => {
       return invoice;
     });
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1626,6 +1890,21 @@ app.patch('/api/invoices/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/invoices/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const inv = await prisma.invoice.findUnique({ where: { id }, include: { items: true } });
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    await syncSalesInvoiceStock(prisma, id, [], true);
+    await reverseJournal(prisma, id);
+    await prisma.invoiceItem.deleteMany({ where: { invoiceId: id } });
+    await prisma.invoice.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2287,11 +2566,12 @@ app.get('/api/suppliers/:id/invoices', async (req, res) => {
 // Purchase invoice routes moved earlier
 
 app.post('/api/suppliers', async (req, res) => {
-  const { code, name, email, currency, billingAddress, status, division, tpin, controlAccount } = req.body;
+  const { code, name, email, currency, billingAddress, status, division, tpin, controlAccount, bankDetails, bank_details, productCategories, product_categories } = req.body;
   try {
+    const supplierCode = code || await generateNextReference('supplier');
     const result = await prisma.suppliers.create({
       data: {
-        code,
+        code: supplierCode,
         name,
         email,
         currency,
@@ -2299,7 +2579,9 @@ app.post('/api/suppliers', async (req, res) => {
         status: status || 'Paid',
         division,
         tpin,
-        controlAccount: controlAccount || 'Accounts Payable'
+        controlAccount: controlAccount || 'Accounts Payable',
+        bankDetails: bankDetails || bank_details || {},
+        productCategories: productCategories || product_categories || []
       }
     });
     res.json(result);
@@ -2310,11 +2592,18 @@ app.post('/api/suppliers', async (req, res) => {
 
 app.put('/api/suppliers/:id', async (req, res) => {
   const { id } = req.params;
-  const { code, name, email, currency, billingAddress, status, division, tpin, inactive, controlAccount } = req.body;
+  const { code, name, email, currency, billingAddress, status, division, tpin, inactive, controlAccount, bankDetails, bank_details, productCategories, product_categories } = req.body;
   try {
+    const updateData: any = { code, name, email, currency, billingAddress, status, division, tpin, inactive, controlAccount };
+    if (bankDetails !== undefined || bank_details !== undefined) {
+      updateData.bankDetails = bankDetails !== undefined ? bankDetails : bank_details;
+    }
+    if (productCategories !== undefined || product_categories !== undefined) {
+      updateData.productCategories = productCategories !== undefined ? productCategories : product_categories;
+    }
     const result = await prisma.suppliers.update({
       where: { id },
-      data: { code, name, email, currency, billingAddress, status, division, tpin, inactive, controlAccount }
+      data: updateData
     });
     res.json(result);
   } catch (err) {
@@ -2359,8 +2648,9 @@ app.get('/api/receipts', async (req, res) => {
 });
 
 app.post('/api/receipts', async (req, res) => {
-  const { reference, date, paidByContact, receivedInAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+  const { reference, date, paidByContact, receivedInAccount, description, amount, currency, exchangeRate, status, items, allocations, division } = req.body;
   try {
+    await checkLockDate(prisma, date);
     const code = currencyCode(currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const result = await prisma.$transaction(async (tx) => {
@@ -2375,6 +2665,7 @@ app.post('/api/receipts', async (req, res) => {
           currency: code,
           exchangeRate: rate,
           status: status || 'Completed',
+          division: division || 'General',
           items: items || null
         }
       });
@@ -2382,8 +2673,8 @@ app.post('/api/receipts', async (req, res) => {
       return receipt;
     });
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -2404,7 +2695,8 @@ app.get('/api/receipts/:id', async (req, res) => {
 
 app.put('/api/receipts/:id', async (req, res) => {
   try {
-    const { reference, date, paidByContact, receivedInAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+    const { reference, date, paidByContact, receivedInAccount, description, amount, currency, exchangeRate, status, items, allocations, division } = req.body;
+    await checkLockDate(prisma, date);
     const code = currencyCode(currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const updatedReceipt = await prisma.$transaction(async (tx) => {
@@ -2420,6 +2712,7 @@ app.put('/api/receipts/:id', async (req, res) => {
           currency: code,
           exchangeRate: rate,
           status: status || 'Completed',
+          division: division || 'General',
           items: items || null
         }
       });
@@ -2428,7 +2721,7 @@ app.put('/api/receipts/:id', async (req, res) => {
     });
     res.json(updatedReceipt);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -2597,27 +2890,96 @@ app.get('/api/accounts/:id/ledger', async (req, res) => {
       orderBy: [{ transactionDate: 'asc' }, { id: 'asc' }]
     });
 
+    const docIds = entries.map(e => e.source_document_id).filter((id): id is string => Boolean(id));
+    const contraEntries = docIds.length > 0 ? await prisma.ledgerEntry.findMany({
+      where: {
+        source_document_id: { in: docIds },
+        accountId: { not: req.params.id }
+      },
+      include: {
+        account: true
+      }
+    }) : [];
+
+    const contraByDoc: Record<string, string[]> = {};
+    for (const ce of contraEntries) {
+      if (ce.source_document_id) {
+        if (!contraByDoc[ce.source_document_id]) contraByDoc[ce.source_document_id] = [];
+        const label = (ce.account as any)?.name || (ce.account as any)?.code || 'Account';
+        if (!contraByDoc[ce.source_document_id].includes(label)) {
+          contraByDoc[ce.source_document_id].push(label);
+        }
+      }
+    }
+
+    const resolveDocumentUrls = (type: string | null, docId: string | null) => {
+      if (!docId) return { viewUrl: null, editUrl: null };
+      const t = (type || '').toLowerCase();
+      if (t.includes('sales invoice') || t.includes('sales_invoice')) {
+        return { viewUrl: `/sales-invoices/view/${docId}`, editUrl: `/sales-invoices/edit/${docId}` };
+      }
+      if (t.includes('purchase invoice') || t.includes('purchase_invoice')) {
+        return { viewUrl: `/purchase-invoices/view/${docId}`, editUrl: `/purchase-invoices/edit/${docId}` };
+      }
+      if (t.includes('receipt')) {
+        return { viewUrl: `/receipts/view/${docId}`, editUrl: `/receipts/edit/${docId}` };
+      }
+      if (t.includes('payment')) {
+        return { viewUrl: `/payments/view/${docId}`, editUrl: `/payments/edit/${docId}` };
+      }
+      if (t.includes('transfer')) {
+        return { viewUrl: `/inter-account-transfers/view/${docId}`, editUrl: `/inter-account-transfers/edit/${docId}` };
+      }
+      if (t.includes('credit note') || t.includes('credit_note')) {
+        return { viewUrl: `/credit-notes/view/${docId}`, editUrl: `/credit-notes/edit/${docId}` };
+      }
+      if (t.includes('journal')) {
+        return { viewUrl: `/journal-entries`, editUrl: `/journal-entries/edit/${docId}` };
+      }
+      if (t.includes('expense')) {
+        return { viewUrl: `/expense-claims`, editUrl: `/expense-claims/edit/${docId}` };
+      }
+      return { viewUrl: null, editUrl: null };
+    };
+
     let running = 0;
+    let foreignRunning = 0;
+    const isAssetOrExpense = ['Asset', 'Expense'].includes(account.accountType);
+
     const mapped = entries.map((entry) => {
       const debit = Number(entry.debit || 0);
       const credit = Number(entry.credit || 0);
-      if (['Asset', 'Expense'].includes(account.accountType)) {
+      const foreignDebit = Number((entry as any).foreignDebit || 0);
+      const foreignCredit = Number((entry as any).foreignCredit || 0);
+
+      if (isAssetOrExpense) {
         running += debit - credit;
+        foreignRunning += foreignDebit - foreignCredit;
       } else {
         running += credit - debit;
+        foreignRunning += foreignCredit - foreignDebit;
       }
+
+      const contraList = entry.source_document_id ? contraByDoc[entry.source_document_id] : null;
+      const contraAccount = contraList && contraList.length > 0 ? contraList.join(', ') : '—';
+      const { viewUrl, editUrl } = resolveDocumentUrls(entry.transactionType, entry.source_document_id);
+
       return {
         id: entry.id,
         date: entry.transactionDate,
         transactionType: entry.transactionType,
         sourceDocumentId: entry.source_document_id,
+        contraAccount,
+        viewUrl,
+        editUrl,
         debit,
         credit,
         currency: (entry as any).currency || 'ZMW',
         exchangeRate: Number((entry as any).exchangeRate || 1),
-        foreignDebit: Number((entry as any).foreignDebit || 0),
-        foreignCredit: Number((entry as any).foreignCredit || 0),
-        balance: Math.round(running * 100) / 100
+        foreignDebit,
+        foreignCredit,
+        balance: Math.round(running * 100) / 100,
+        foreignBalance: Math.round(foreignRunning * 100) / 100
       };
     });
 
@@ -2701,6 +3063,31 @@ app.post('/api/ledger/backfill', async (_req, res) => {
   }
 });
 
+app.get('/api/ledger/document/:id', async (req, res) => {
+  try {
+    const entries = await prisma.ledgerEntry.findMany({
+      where: { source_document_id: req.params.id },
+      include: { account: true },
+      orderBy: { id: 'asc' }
+    });
+    res.json(entries.map((e: any) => ({
+      id: e.id,
+      transactionDate: e.transactionDate,
+      transactionType: e.transactionType,
+      accountCode: e.account?.code || '',
+      accountName: e.account?.name || 'Account',
+      debit: Number(e.debit || 0),
+      credit: Number(e.credit || 0),
+      currency: e.currency || 'ZMW',
+      exchangeRate: Number(e.exchangeRate || 1),
+      foreignDebit: Number(e.foreignDebit || 0),
+      foreignCredit: Number(e.foreignCredit || 0)
+    })));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/accounting-nav-counts', async (_req, res) => {
   const safeCount = async (fn: () => Promise<number>) => {
     try {
@@ -2747,6 +3134,101 @@ app.get('/api/summary', async (req, res) => {
     res.json(accountsWithBalances);
   } catch (err: any) {
     console.error('Summary API error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/counts', async (req, res) => {
+  try {
+    const [
+      customers,
+      suppliers,
+      salesInvoices,
+      salesQuotes,
+      salesOrders,
+      deliveryNotes,
+      creditNotes,
+      purchaseInvoices,
+      purchaseOrders,
+      purchaseQuotes,
+      goodsReceivedNotes,
+      debitNotes,
+      receipts,
+      payments,
+      interAccountTransfers,
+      expenseClaims,
+      expenseClaimPayers,
+      payslips,
+      journalEntries,
+      bankAccounts,
+      employees,
+      inventoryItems,
+      inventoryTransfers,
+      inventoryWriteOffs,
+      fixedAssets
+    ] = await Promise.all([
+      prisma.customer.count().catch(() => 0),
+      prisma.suppliers.count().catch(() => 0),
+      prisma.invoice.count().catch(() => 0),
+      prisma.salesQuote.count().catch(() => 0),
+      prisma.salesOrder.count().catch(() => 0),
+      prisma.deliveryNote.count().catch(() => 0),
+      prisma.creditNote.count().catch(() => 0),
+      prisma.invoices.count().catch(() => 0),
+      prisma.purchaseOrder.count().catch(() => 0),
+      prisma.purchaseEnquiry.count().catch(() => 0),
+      prisma.goodsReceivedNote.count().catch(() => 0),
+      prisma.debitNote.count().catch(() => 0),
+      prisma.receipt.count().catch(() => 0),
+      prisma.payment.count().catch(() => 0),
+      prisma.interAccountTransfer.count().catch(() => 0),
+      prisma.expenseClaim.count().catch(() => 0),
+      prisma.expenseClaimPayer.count().catch(() => 0),
+      prisma.payslip.count().catch(() => 0),
+      prisma.journalEntry.count().catch(() => 0),
+      prisma.chartOfAccount.count({ where: { isPaymentAccount: true } }).catch(() => 0),
+      prisma.employee.count().catch(() => 0),
+      prisma.item.count().catch(() => 0),
+      prisma.inventoryTransfer.count().catch(() => 0),
+      prisma.inventoryWriteOff.count().catch(() => 0),
+      prisma.$queryRawUnsafe<{ count: string | number }[]>('SELECT COUNT(*)::int as count FROM finance.fixed_assets')
+        .then((r: any) => Number(r[0]?.count) || 0)
+        .catch(() => 0),
+    ]);
+
+    res.json({
+      customers,
+      suppliers,
+      salesInvoices,
+      salesQuotes,
+      salesOrders,
+      deliveryNotes,
+      creditNotes,
+      purchaseInvoices,
+      purchaseOrders,
+      purchaseQuotes,
+      goodsReceivedNotes,
+      debitNotes,
+      receipts,
+      payments,
+      interAccountTransfers,
+      expenseClaims,
+      expenseClaimPayers,
+      payslips,
+      journalEntries,
+      bankAccounts,
+      employees,
+      inventoryItems,
+      inventoryTransfers,
+      inventoryWriteOffs,
+      fixedAssets,
+      accounting: receipts + payments + interAccountTransfers + expenseClaims + payslips + journalEntries + bankAccounts,
+      sales: customers + salesInvoices + salesQuotes + salesOrders + deliveryNotes + creditNotes,
+      purchase: suppliers + purchaseInvoices + purchaseOrders + purchaseQuotes + goodsReceivedNotes + debitNotes,
+      inventory: inventoryItems + inventoryTransfers + inventoryWriteOffs,
+      master: employees
+    });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -2861,6 +3343,231 @@ app.delete('/api/bank-accounts/:id', async (req, res) => {
     if (err.code === 'P2003') {
       return res.status(400).json({ error: 'Cannot delete bank account because it has associated transactions.' });
     }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- BANK RECONCILIATION ---
+app.get('/api/bank-accounts/:id/reconciliation', async (req, res) => {
+  const { id } = req.params;
+  const statementDateStr = req.query.statementDate ? String(req.query.statementDate) : new Date().toISOString().slice(0, 10);
+  const statementBalance = Number(req.query.statementBalance || 0);
+
+  try {
+    const account = await prisma.chartOfAccount.findUnique({ where: { id } });
+    if (!account) return res.status(404).json({ error: 'Bank account not found' });
+
+    const stmtDate = new Date(statementDateStr);
+    stmtDate.setHours(23, 59, 59, 999);
+
+    const [receipts, payments, transfers, ledger] = await Promise.all([
+      prisma.receipt.findMany({ where: { receivedInAccount: account.name }, orderBy: { date: 'asc' } }),
+      prisma.payment.findMany({ where: { paidFromAccount: account.name }, orderBy: { date: 'asc' } }),
+      prisma.interAccountTransfer.findMany({
+        where: { OR: [{ paidFromAccount: account.name }, { receivedInAccount: account.name }] },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.ledgerEntry.findMany({
+        where: { accountId: id, transactionDate: { lte: stmtDate } }
+      })
+    ]);
+
+    const toDMY = (d: any) => {
+      if (!d) return '';
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return '';
+      const day = String(dt.getDate()).padStart(2, '0');
+      const month = String(dt.getMonth() + 1).padStart(2, '0');
+      return `${day}.${month}.${dt.getFullYear()}`;
+    };
+
+    const bookBalance = ledger.reduce((sum, e) => sum + (Number(e.debit) || 0) - (Number(e.credit) || 0), 0);
+
+    const transactions: any[] = [];
+    let unclearedDepositsTotal = 0;
+    let unclearedPaymentsTotal = 0;
+    let clearedDepositsTotal = 0;
+    let clearedPaymentsTotal = 0;
+
+    for (const r of receipts) {
+      const rDate = r.date || r.createdAt;
+      const isCleared = !!r.cleared;
+      const amount = Number(r.amount || 0);
+
+      if (isCleared) {
+        clearedDepositsTotal += amount;
+      } else {
+        unclearedDepositsTotal += amount;
+      }
+
+      transactions.push({
+        id: r.id,
+        type: 'Receipt',
+        dateObj: new Date(rDate),
+        date: toDMY(rDate),
+        reference: r.reference || '',
+        contact: r.paidByContact || '',
+        description: r.description || '',
+        debit: amount,
+        credit: 0,
+        cleared: isCleared,
+        clearedDate: r.clearedDate ? toDMY(r.clearedDate) : (isCleared ? toDMY(rDate) : '')
+      });
+    }
+
+    for (const p of payments) {
+      const pDate = p.date || p.createdAt;
+      const isCleared = !!p.cleared;
+      const amount = Number(p.amount || 0);
+
+      if (isCleared) {
+        clearedPaymentsTotal += amount;
+      } else {
+        unclearedPaymentsTotal += amount;
+      }
+
+      transactions.push({
+        id: p.id,
+        type: 'Payment',
+        dateObj: new Date(pDate),
+        date: toDMY(pDate),
+        reference: p.reference || '',
+        contact: p.paidToContact || '',
+        description: p.description || '',
+        debit: 0,
+        credit: amount,
+        cleared: isCleared,
+        clearedDate: p.clearedDate ? toDMY(p.clearedDate) : (isCleared ? toDMY(pDate) : '')
+      });
+    }
+
+    for (const t of transfers) {
+      const tDate = t.date;
+      const isCleared = !!(t as any).cleared;
+      const isReceived = t.receivedInAccount === account.name;
+      const amount = Number(isReceived ? (t.receivedAmount || t.amount) : (t.paidAmount || t.amount));
+
+      if (isReceived) {
+        if (isCleared) clearedDepositsTotal += amount;
+        else unclearedDepositsTotal += amount;
+      } else {
+        if (isCleared) clearedPaymentsTotal += amount;
+        else unclearedPaymentsTotal += amount;
+      }
+
+      transactions.push({
+        id: t.id,
+        type: 'Transfer',
+        dateObj: new Date(tDate),
+        date: toDMY(tDate),
+        reference: t.reference || '',
+        contact: isReceived ? `Transfer from ${t.paidFromAccount}` : `Transfer to ${t.receivedInAccount}`,
+        description: t.description || '',
+        debit: isReceived ? amount : 0,
+        credit: isReceived ? 0 : amount,
+        cleared: isCleared,
+        clearedDate: (t as any).clearedDate ? toDMY((t as any).clearedDate) : (isCleared ? toDMY(tDate) : '')
+      });
+    }
+
+    transactions.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+
+    const clearedBalance = Math.round((bookBalance + unclearedPaymentsTotal - unclearedDepositsTotal) * 100) / 100;
+    const discrepancy = Math.round((statementBalance - clearedBalance) * 100) / 100;
+
+    res.json({
+      account,
+      statementDate: statementDateStr,
+      statementDateFormatted: toDMY(stmtDate),
+      statementBalance: Math.round(statementBalance * 100) / 100,
+      bookBalance: Math.round(bookBalance * 100) / 100,
+      unclearedDeposits: Math.round(unclearedDepositsTotal * 100) / 100,
+      unclearedPayments: Math.round(unclearedPaymentsTotal * 100) / 100,
+      clearedBalance,
+      discrepancy,
+      isBalanced: Math.abs(discrepancy) < 0.005,
+      transactions
+    });
+  } catch (err: any) {
+    console.error('Reconciliation fetch error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/bank-accounts/:id/reconcile-line', async (req, res) => {
+  const { type, id: lineId, cleared, clearedDate } = req.body;
+  try {
+    const parseDate = (d: any) => {
+      if (!d) return null;
+      if (typeof d === 'string' && d.includes('.')) {
+        const parts = d.split('.');
+        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      }
+      return new Date(d);
+    };
+
+    const dateVal = cleared ? (clearedDate ? parseDate(clearedDate) : new Date()) : null;
+
+    if (type === 'Receipt') {
+      await prisma.receipt.update({
+        where: { id: lineId },
+        data: { cleared: !!cleared, clearedDate: dateVal }
+      });
+    } else if (type === 'Payment') {
+      await prisma.payment.update({
+        where: { id: lineId },
+        data: { cleared: !!cleared, clearedDate: dateVal }
+      });
+    } else if (type === 'Transfer') {
+      await prisma.interAccountTransfer.update({
+        where: { id: lineId },
+        data: { cleared: !!cleared, clearedDate: dateVal }
+      });
+    }
+
+    res.json({ success: true, cleared, clearedDate: dateVal });
+  } catch (err: any) {
+    console.error('Reconciliation line update error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/bank-accounts/:id/bulk-reconcile', async (req, res) => {
+  const { lines } = req.body; // Array of { type, id, cleared, clearedDate }
+  try {
+    const parseDate = (d: any) => {
+      if (!d) return null;
+      if (typeof d === 'string' && d.includes('.')) {
+        const parts = d.split('.');
+        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      }
+      return new Date(d);
+    };
+
+    if (Array.isArray(lines)) {
+      for (const line of lines) {
+        const dateVal = line.cleared ? (line.clearedDate ? parseDate(line.clearedDate) : new Date()) : null;
+        if (line.type === 'Receipt') {
+          await prisma.receipt.update({
+            where: { id: line.id },
+            data: { cleared: !!line.cleared, clearedDate: dateVal }
+          });
+        } else if (line.type === 'Payment') {
+          await prisma.payment.update({
+            where: { id: line.id },
+            data: { cleared: !!line.cleared, clearedDate: dateVal }
+          });
+        } else if (line.type === 'Transfer') {
+          await prisma.interAccountTransfer.update({
+            where: { id: line.id },
+            data: { cleared: !!line.cleared, clearedDate: dateVal }
+          });
+        }
+      }
+    }
+    res.json({ success: true, updated: lines?.length || 0 });
+  } catch (err: any) {
+    console.error('Bulk reconcile error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3663,28 +4370,29 @@ app.get('/api/credit-notes', async (req, res) => {
 
 app.post('/api/credit-notes', async (req, res) => {
   try {
-    const { reference, customerId, issueDate, currency, items, options, description, grandTotal, balance, status } = req.body;
+    const { reference, customerId, issueDate, currency, items, options, description, grandTotal, balance, status, salesInvoiceId, salesInvoiceRef } = req.body;
     
     // Auto-generate reference if not provided
     let finalRef = reference;
     if (!finalRef) {
-      const count = await prisma.creditNote.count();
-      finalRef = `CN-${String(count + 1).padStart(4, '0')}`;
+      finalRef = await generateNextReference('credit-note');
     }
+    const finalAmount = Number(grandTotal ?? req.body.amount) || 0;
 
     const newNote = await prisma.creditNote.create({
       data: {
         reference: finalRef,
         issueDate: issueDate ? new Date(issueDate) : new Date(),
         customerId,
+        salesInvoiceId: salesInvoiceId || null,
         description,
         currency: currency || 'ZMW',
-        grandTotal: Number(grandTotal) || 0,
-        balance: Number(balance) || 0,
+        grandTotal: finalAmount,
+        balance: Number(balance ?? finalAmount) || 0,
         status: status || 'Open',
-        docOptions: options || {},
+        docOptions: { ...(options || {}), salesInvoiceId: salesInvoiceId || null, salesInvoiceRef: salesInvoiceRef || null },
         items: {
-          create: items.map((i: any) => ({
+          create: (items || []).map((i: any) => ({
             itemId: i.itemId || null,
             description: i.description || i.item || '',
             qty: Number(i.qty) || 1,
@@ -3712,7 +4420,7 @@ app.post('/api/credit-notes', async (req, res) => {
 app.put('/api/credit-notes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { reference, issueDate, description, currency, items, options, grandTotal, balance, status } = req.body;
+    const { reference, issueDate, description, currency, items, options, grandTotal, balance, status, salesInvoiceId } = req.body;
 
     // Delete existing items to recreate
     await prisma.creditNoteItem.deleteMany({ where: { creditNoteId: id } });
@@ -3722,12 +4430,13 @@ app.put('/api/credit-notes/:id', async (req, res) => {
       data: {
         reference,
         issueDate: issueDate ? new Date(issueDate) : undefined,
+        salesInvoiceId: salesInvoiceId || null,
         description,
         currency,
         grandTotal: Number(grandTotal) || 0,
         balance: Number(balance) || 0,
         status,
-        docOptions: options,
+        docOptions: { ...(options || {}), salesInvoiceId: salesInvoiceId || null },
         items: {
           create: items.map((i: any) => ({
             itemId: i.itemId || null,
@@ -4256,6 +4965,7 @@ app.post('/api/purchase-invoices', async (req, res) => {
   const { supplierId, reference, grandTotal, dueDate, issueDate, status, description, items, docOptions, currency, exchangeRate } = req.body;
   console.log(`[PI POST] Body items:`, items?.length);
   try {
+    await checkLockDate(prisma, issueDate);
     const code = currencyCode(currency || (docOptions as any)?.currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || Number((docOptions as any)?.exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.invoices.create({
@@ -4277,7 +4987,7 @@ app.post('/api/purchase-invoices', async (req, res) => {
             qty: Number(i.qty) || 0,
             unitPrice: Number(i.unitPrice) || 0,
             totalAmount: Number(i.totalAmount) || 0,
-            taxCode: i.taxCode || 'VAT 16%',
+            taxCode: i.taxCode || 'No tax',
             discount: i.discount || '',
             division: i.division || 'General',
             account: i.account || 'Inventory'
@@ -4329,7 +5039,7 @@ app.post('/api/purchase-invoices', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error('[PURCHASE INVOICE CREATE ERROR]:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -4338,6 +5048,7 @@ app.put('/api/purchase-invoices/:id', async (req, res) => {
   const { supplierId, reference, grandTotal, dueDate, issueDate, status, description, items, docOptions, currency, exchangeRate } = req.body;
   console.log(`>>> [PURCHASE INVOICE PUT] UPDATING ID: ${id}`, JSON.stringify(req.body, null, 2));
   try {
+    await checkLockDate(prisma, issueDate);
     const code = currencyCode(currency || (docOptions as any)?.currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || Number((docOptions as any)?.exchangeRate) || await resolveRateAtDate(prisma, issueDate, code));
     const result = await prisma.invoices.update({
@@ -4361,7 +5072,7 @@ app.put('/api/purchase-invoices/:id', async (req, res) => {
             qty: Number(i.qty) || 0,
             unitPrice: Number(i.unitPrice) || 0,
             totalAmount: Number(i.totalAmount) || 0,
-            taxCode: i.taxCode || 'VAT 16%',
+            taxCode: i.taxCode || 'No tax',
             discount: i.discount || '',
             division: i.division || 'General',
             account: i.account || 'Inventory'
@@ -4378,6 +5089,21 @@ app.put('/api/purchase-invoices/:id', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error('[PURCHASE INVOICE UPDATE ERROR]:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/purchase-invoices/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const inv = await prisma.invoices.findUnique({ where: { id }, include: { items: true } });
+    if (!inv) return res.status(404).json({ error: 'Purchase invoice not found' });
+    await syncPurchaseInvoiceStock(prisma, id, [], undefined, true);
+    await reverseJournal(prisma, id);
+    await prisma.purchaseInvoiceItem.deleteMany({ where: { invoiceId: id } });
+    await prisma.invoices.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -4949,7 +5675,8 @@ app.get('/api/payments/:id', async (req, res) => {
 
 app.post('/api/payments', async (req, res) => {
   try {
-    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, exchangeRate, status, items, allocations, division } = req.body;
+    await checkLockDate(prisma, date);
     const code = currencyCode(currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const newPayment = await prisma.$transaction(async (tx) => {
@@ -4964,6 +5691,7 @@ app.post('/api/payments', async (req, res) => {
           currency: code,
           exchangeRate: rate,
           status: status || 'Completed',
+          division: division || 'General',
           items: items || null
         }
       });
@@ -4972,13 +5700,14 @@ app.post('/api/payments', async (req, res) => {
     });
     res.json(newPayment);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
 app.put('/api/payments/:id', async (req, res) => {
   try {
-    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, exchangeRate, status, items, allocations } = req.body;
+    const { reference, date, paidToContact, paidFromAccount, description, amount, currency, exchangeRate, status, items, allocations, division } = req.body;
+    await checkLockDate(prisma, date);
     const code = currencyCode(currency);
     const rate = code === 'ZMW' ? 1 : (Number(exchangeRate) || await resolveRateAtDate(prisma, date, code));
     const updatedPayment = await prisma.$transaction(async (tx) => {
@@ -4994,6 +5723,7 @@ app.put('/api/payments/:id', async (req, res) => {
           currency: code,
           exchangeRate: rate,
           status: status || 'Completed',
+          division: division || 'General',
           items: items || null
         }
       });
@@ -5002,7 +5732,7 @@ app.put('/api/payments/:id', async (req, res) => {
     });
     res.json(updatedPayment);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -5046,8 +5776,12 @@ app.get('/api/inter-account-transfers/:id', async (req, res) => {
 
 app.post('/api/inter-account-transfers', async (req, res) => {
   try {
-    const { reference, date, paidFromAccount, receivedInAccount, description, amount, currency } = req.body;
+    const { reference, date, paidFromAccount, receivedInAccount, description, amount, currency, paidAmount, paidCurrency, receivedAmount, receivedCurrency, division } = req.body;
     const finalRef = reference || await generateNextReference('inter-account-transfer');
+    const finalPaidAmount = Number(paidAmount ?? amount) || 0;
+    const finalReceivedAmount = Number(receivedAmount ?? paidAmount ?? amount) || finalPaidAmount;
+    const finalPaidCurrency = paidCurrency || currency || 'ZMW';
+    const finalReceivedCurrency = receivedCurrency || currency || 'ZMW';
     
     const result = await prisma.$transaction(async (tx) => {
       const transfer = await tx.interAccountTransfer.create({
@@ -5057,8 +5791,13 @@ app.post('/api/inter-account-transfers', async (req, res) => {
           paidFromAccount,
           receivedInAccount,
           description,
-          amount,
-          currency: currency || 'ZMW',
+          division: division || 'General',
+          amount: finalPaidAmount,
+          currency: finalPaidCurrency,
+          paidAmount: finalPaidAmount,
+          paidCurrency: finalPaidCurrency,
+          receivedAmount: finalReceivedAmount,
+          receivedCurrency: finalReceivedCurrency,
           status: 'Completed'
         }
       });
@@ -5073,7 +5812,12 @@ app.post('/api/inter-account-transfers', async (req, res) => {
 
 app.put('/api/inter-account-transfers/:id', async (req, res) => {
   try {
-    const { reference, date, paidFromAccount, receivedInAccount, description, amount, currency } = req.body;
+    const { reference, date, paidFromAccount, receivedInAccount, description, amount, currency, paidAmount, paidCurrency, receivedAmount, receivedCurrency, division } = req.body;
+    const finalPaidAmount = Number(paidAmount ?? amount) || 0;
+    const finalReceivedAmount = Number(receivedAmount ?? paidAmount ?? amount) || finalPaidAmount;
+    const finalPaidCurrency = paidCurrency || currency || 'ZMW';
+    const finalReceivedCurrency = receivedCurrency || currency || 'ZMW';
+
     const result = await prisma.$transaction(async (tx) => {
       const transfer = await tx.interAccountTransfer.update({
         where: { id: req.params.id },
@@ -5083,8 +5827,13 @@ app.put('/api/inter-account-transfers/:id', async (req, res) => {
           paidFromAccount,
           receivedInAccount,
           description,
-          amount,
-          currency: currency || 'ZMW',
+          division: division || 'General',
+          amount: finalPaidAmount,
+          currency: finalPaidCurrency,
+          paidAmount: finalPaidAmount,
+          paidCurrency: finalPaidCurrency,
+          receivedAmount: finalReceivedAmount,
+          receivedCurrency: finalReceivedCurrency,
         }
       });
       await postTransfer(tx, transfer);
@@ -5108,6 +5857,190 @@ app.delete('/api/inter-account-transfers/:id', async (req, res) => {
         await tx.interAccountTransfer.delete({ where: { id: transfer.id }});
       });
     }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Journal Entries
+app.get('/api/journal-entries', async (req, res) => {
+  try {
+    const entries = await prisma.journalEntry.findMany({
+      include: {
+        lines: {
+          include: { account: true }
+        }
+      },
+      orderBy: { date: 'desc' }
+    });
+    res.json(entries);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/journal-entries/:id', async (req, res) => {
+  try {
+    const entry = await prisma.journalEntry.findUnique({
+      where: { id: req.params.id },
+      include: {
+        lines: {
+          include: { account: true }
+        }
+      }
+    });
+    if (!entry) return res.status(404).json({ error: 'Journal entry not found' });
+    res.json(entry);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/journal-entries', async (req, res) => {
+  try {
+    const { reference, date, description, currency, exchangeRate, lines } = req.body;
+    await checkLockDate(prisma, date);
+    const finalRef = reference || await generateNextReference('journal-entry');
+    const docDate = date ? new Date(date) : new Date();
+    const curr = currency || 'ZMW';
+    const rate = Number(exchangeRate) || 1;
+
+    let totalDebit = 0;
+    let totalCredit = 0;
+    const parsedLines = (lines || []).map((l: any) => {
+      const lineCurr = l.currency || curr;
+      const lineRate = lineCurr === 'ZMW' ? 1 : (Number(l.exchangeRate) || rate);
+      const rawDebit = Number(l.debit) || 0;
+      const rawCredit = Number(l.credit) || 0;
+      const foreignDebit = Number(l.foreignDebit) || (lineCurr !== 'ZMW' ? rawDebit : 0);
+      const foreignCredit = Number(l.foreignCredit) || (lineCurr !== 'ZMW' ? rawCredit : 0);
+      const baseDebit = lineCurr !== 'ZMW' ? Math.round(foreignDebit * lineRate * 100) / 100 : rawDebit;
+      const baseCredit = lineCurr !== 'ZMW' ? Math.round(foreignCredit * lineRate * 100) / 100 : rawCredit;
+      totalDebit = Math.round((totalDebit + baseDebit) * 100) / 100;
+      totalCredit = Math.round((totalCredit + baseCredit) * 100) / 100;
+      return {
+        accountId: l.accountId,
+        description: l.description || '',
+        debit: baseDebit,
+        credit: baseCredit,
+        foreignDebit,
+        foreignCredit,
+        currency: lineCurr,
+        exchangeRate: lineRate
+      };
+    });
+
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+      return res.status(400).json({
+        error: `Journal entry is out of balance. Total Debit: ${totalDebit}, Total Credit: ${totalCredit}`
+      });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const je = await tx.journalEntry.create({
+        data: {
+          reference: finalRef,
+          date: docDate,
+          description: description || '',
+          currency: curr,
+          exchangeRate: rate,
+          totalDebit,
+          totalCredit,
+          lines: {
+            create: parsedLines
+          }
+        },
+        include: { lines: true }
+      });
+      await postJournalEntryDoc(tx, je);
+      return je;
+    });
+
+    res.status(201).json(created);
+  } catch (err: any) {
+    console.error('[JOURNAL ENTRY POST ERROR]:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+app.put('/api/journal-entries/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { reference, date, description, currency, exchangeRate, lines } = req.body;
+    await checkLockDate(prisma, date);
+    const docDate = date ? new Date(date) : new Date();
+    const curr = currency || 'ZMW';
+    const rate = Number(exchangeRate) || 1;
+
+    let totalDebit = 0;
+    let totalCredit = 0;
+    const parsedLines = (lines || []).map((l: any) => {
+      const lineCurr = l.currency || curr;
+      const lineRate = lineCurr === 'ZMW' ? 1 : (Number(l.exchangeRate) || rate);
+      const rawDebit = Number(l.debit) || 0;
+      const rawCredit = Number(l.credit) || 0;
+      const foreignDebit = Number(l.foreignDebit) || (lineCurr !== 'ZMW' ? rawDebit : 0);
+      const foreignCredit = Number(l.foreignCredit) || (lineCurr !== 'ZMW' ? rawCredit : 0);
+      const baseDebit = lineCurr !== 'ZMW' ? Math.round(foreignDebit * lineRate * 100) / 100 : rawDebit;
+      const baseCredit = lineCurr !== 'ZMW' ? Math.round(foreignCredit * lineRate * 100) / 100 : rawCredit;
+      totalDebit = Math.round((totalDebit + baseDebit) * 100) / 100;
+      totalCredit = Math.round((totalCredit + baseCredit) * 100) / 100;
+      return {
+        accountId: l.accountId,
+        description: l.description || '',
+        debit: baseDebit,
+        credit: baseCredit,
+        foreignDebit,
+        foreignCredit,
+        currency: lineCurr,
+        exchangeRate: lineRate
+      };
+    });
+
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+      return res.status(400).json({
+        error: `Journal entry is out of balance. Total Debit: ${totalDebit}, Total Credit: ${totalCredit}`
+      });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.journalEntryLine.deleteMany({ where: { journalId: id } });
+      const je = await tx.journalEntry.update({
+        where: { id },
+        data: {
+          reference,
+          date: docDate,
+          description: description || '',
+          currency: curr,
+          exchangeRate: rate,
+          totalDebit,
+          totalCredit,
+          lines: {
+            create: parsedLines
+          }
+        },
+        include: { lines: true }
+      });
+      await postJournalEntryDoc(tx, je);
+      return je;
+    });
+
+    res.json(updated);
+  } catch (err: any) {
+    console.error('[JOURNAL ENTRY PUT ERROR]:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/journal-entries/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await reverseJournal(tx, id);
+      await tx.journalEntryLine.deleteMany({ where: { journalId: id } });
+      await tx.journalEntry.delete({ where: { id } });
+    });
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -5273,7 +6206,7 @@ app.get('/api/expense-claims/:id', async (req, res) => {
 
 app.post('/api/expense-claims', async (req, res) => {
   try {
-    const { date, reference, payerId, payee, currency, description, amountsAreTaxInclusive, items } = req.body;
+    const { date, reference, payerId, payee, currency, description, amountsAreTaxInclusive, items, division } = req.body;
     
     const result = await prisma.$transaction(async (tx) => {
       const claim = await tx.expenseClaim.create({
@@ -5285,6 +6218,7 @@ app.post('/api/expense-claims', async (req, res) => {
           currency,
           description,
           amountsAreTaxInclusive,
+          division: division || 'General',
           items: {
             create: items.map((item: any) => ({
               accountId: item.account,
@@ -5302,6 +6236,46 @@ app.post('/api/expense-claims', async (req, res) => {
       return claim;
     });
 
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/expense-claims/:id', async (req, res) => {
+  try {
+    const { date, reference, payerId, payee, currency, description, amountsAreTaxInclusive, items, division } = req.body;
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.expenseClaimLine.deleteMany({
+        where: { expenseClaimId: req.params.id }
+      });
+      const claim = await tx.expenseClaim.update({
+        where: { id: req.params.id },
+        data: {
+          date: date ? new Date(date) : undefined,
+          reference,
+          payerId,
+          payee,
+          currency,
+          description,
+          amountsAreTaxInclusive,
+          division: division || 'General',
+          items: {
+            create: (items || []).map((item: any) => ({
+              accountId: item.account || item.accountId,
+              description: item.description,
+              qty: Number(item.qty || 1),
+              unitPrice: Number(item.unitPrice || 0),
+              taxCode: item.taxCode,
+              taxAmount: Number(item.taxAmount || 0)
+            }))
+          }
+        },
+        include: { items: true }
+      });
+      await postExpenseClaim(tx, claim);
+      return claim;
+    });
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
